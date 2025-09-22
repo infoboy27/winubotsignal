@@ -72,11 +72,11 @@ class OHLCVBase(BaseModel):
     symbol: str
     timeframe: TimeFrame
     timestamp: datetime
-    open: Decimal = Field(..., decimal_places=8)
-    high: Decimal = Field(..., decimal_places=8)
-    low: Decimal = Field(..., decimal_places=8)
-    close: Decimal = Field(..., decimal_places=8)
-    volume: Decimal = Field(..., decimal_places=8)
+    open: Decimal = Field(..., ge=0)
+    high: Decimal = Field(..., ge=0)
+    low: Decimal = Field(..., ge=0)
+    close: Decimal = Field(..., ge=0)
+    volume: Decimal = Field(..., ge=0)
 
 
 class OHLCV(OHLCVBase):
@@ -103,11 +103,11 @@ class SignalBase(BaseModel):
     signal_type: SignalType
     direction: SignalDirection
     score: float = Field(..., ge=0.0, le=1.0, description="Signal confidence score")
-    entry_price: Optional[Decimal] = Field(None, decimal_places=8)
-    stop_loss: Optional[Decimal] = Field(None, decimal_places=8)
-    take_profit_1: Optional[Decimal] = Field(None, decimal_places=8)
-    take_profit_2: Optional[Decimal] = Field(None, decimal_places=8)
-    take_profit_3: Optional[Decimal] = Field(None, decimal_places=8)
+    entry_price: Optional[Decimal] = Field(None, ge=0)
+    stop_loss: Optional[Decimal] = Field(None, ge=0)
+    take_profit_1: Optional[Decimal] = Field(None, ge=0)
+    take_profit_2: Optional[Decimal] = Field(None, ge=0)
+    take_profit_3: Optional[Decimal] = Field(None, ge=0)
     risk_reward_ratio: Optional[float] = Field(None, description="Risk to reward ratio")
     confluences: SignalConfluence
     context: Dict[str, Any] = Field(default_factory=dict, description="Additional context")
@@ -196,12 +196,12 @@ class PaperPositionBase(BaseModel):
     """Base paper trading position."""
     symbol: str
     side: SignalDirection
-    entry_price: Decimal = Field(..., decimal_places=8)
-    quantity: Decimal = Field(..., decimal_places=8)
-    stop_loss: Optional[Decimal] = Field(None, decimal_places=8)
-    take_profit: Optional[Decimal] = Field(None, decimal_places=8)
-    current_price: Optional[Decimal] = Field(None, decimal_places=8)
-    unrealized_pnl: Optional[Decimal] = Field(None, decimal_places=8)
+    entry_price: Decimal = Field(..., ge=0)
+    quantity: Decimal = Field(..., ge=0)
+    stop_loss: Optional[Decimal] = Field(None, ge=0)
+    take_profit: Optional[Decimal] = Field(None, ge=0)
+    current_price: Optional[Decimal] = Field(None, ge=0)
+    unrealized_pnl: Optional[Decimal] = Field(None, ge=0)
     opened_at: datetime
     closed_at: Optional[datetime] = None
     is_open: bool = Field(True)
@@ -210,7 +210,7 @@ class PaperPositionBase(BaseModel):
 class PaperPosition(PaperPositionBase):
     """Paper position with database fields."""
     id: int
-    realized_pnl: Optional[Decimal] = Field(None, decimal_places=8)
+    realized_pnl: Optional[Decimal] = Field(None, ge=0)
     
     class Config:
         from_attributes = True

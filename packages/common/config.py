@@ -115,8 +115,15 @@ class TradingSettings(BaseSettings):
     @validator('timeframes', pre=True)
     def validate_timeframes(cls, v):
         if isinstance(v, str):
-            return [tf.strip() for tf in v.split(',')]
-        return v
+            # Handle both comma-separated and space-separated values
+            if ',' in v:
+                return [tf.strip() for tf in v.split(',') if tf.strip()]
+            else:
+                return [tf.strip() for tf in v.split() if tf.strip()]
+        elif isinstance(v, list):
+            return v
+        else:
+            return ["1m", "5m", "15m", "1h", "4h", "1d"]  # Default fallback
     
     @validator('default_risk_percent', 'max_daily_loss_percent')
     def validate_percentages(cls, v):

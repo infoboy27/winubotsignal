@@ -4,7 +4,10 @@ import pandas as pd
 from decimal import Decimal, ROUND_DOWN
 from typing import Dict, Optional
 from loguru import logger
-import pandas_ta as ta
+try:
+    import pandas_ta as ta
+except ImportError:
+    from . import mock_pandas_ta as ta
 
 
 class RiskManager:

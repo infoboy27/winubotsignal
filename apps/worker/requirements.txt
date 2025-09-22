@@ -6,7 +6,7 @@ psycopg2-binary==2.9.9
 pandas==2.1.3
 numpy==1.24.3
 ccxt==4.1.64
-# pandas-ta==0.3.14b0  # Temporarily disabled due to version issues
+# pandas-ta==0.3.14b0  # Temporarily disabled
 scikit-learn==1.3.2
 lightgbm==4.1.0
 httpx==0.25.2
