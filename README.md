@@ -157,6 +157,73 @@ cd apps/web && pnpm test
 
 MIT License - see LICENSE file for details.
 
+## Git Setup and Push Instructions
+
+To push this repository to GitHub, you'll need to set up authentication. Here are the steps:
+
+### Option 1: Using Personal Access Token (Recommended)
+
+1. **Create a Personal Access Token**:
+   - Go to GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
+   - Generate a new token with `repo` permissions
+   - Copy the token
+
+2. **Set up the remote with token**:
+   ```bash
+   git remote set-url origin https://YOUR_TOKEN@github.com/infoboy27/winubotsignal.git
+   git push -u origin main
+   ```
+
+### Option 2: Using SSH Key
+
+1. **Generate SSH key** (if you don't have one):
+   ```bash
+   ssh-keygen -t ed25519 -C "your_email@example.com"
+   ```
+
+2. **Add SSH key to GitHub**:
+   - Copy the public key: `cat ~/.ssh/id_ed25519.pub`
+   - Go to GitHub → Settings → SSH and GPG keys → New SSH key
+   - Paste the public key
+
+3. **Test SSH connection**:
+   ```bash
+   ssh -T git@github.com
+   ```
+
+4. **Push to GitHub**:
+   ```bash
+   git push -u origin main
+   ```
+
+### Option 3: Using GitHub CLI
+
+1. **Install GitHub CLI**:
+   ```bash
+   # Ubuntu/Debian
+   sudo apt install gh
+   
+   # Or download from: https://cli.github.com/
+   ```
+
+2. **Authenticate**:
+   ```bash
+   gh auth login
+   ```
+
+3. **Push to GitHub**:
+   ```bash
+   git push -u origin main
+   ```
+
+## Current Status
+
+✅ **Web Dashboard**: Fully functional on port 3003  
+✅ **Database Services**: PostgreSQL and Redis running  
+✅ **Monitoring**: Prometheus and Grafana operational  
+⚠️ **API Service**: Configuration being resolved  
+⚠️ **Worker Service**: Depends on API service  
+
 ## Support
 
 For issues and questions, please open a GitHub issue or contact the development team.
