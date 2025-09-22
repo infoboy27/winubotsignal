@@ -6,7 +6,7 @@ import { Toaster } from 'react-hot-toast'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Million Trader - AI Crypto Trading Signals',
+  title: 'Winu Bot Signal - AI Crypto Trading Signals',
   description: 'AI-powered cryptocurrency trading signals and alerts system',
 }
 

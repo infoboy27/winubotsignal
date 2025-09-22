@@ -3,7 +3,7 @@ version: '3.8'
 services:
   postgres:
     image: timescale/timescaledb:latest-pg15
-    container_name: million-trader-postgres
+    container_name: winu-bot-signal-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-million}
       POSTGRES_USER: ${POSTGRES_USER:-million}
@@ -22,7 +22,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: million-trader-redis
+    container_name: winu-bot-signal-redis
     volumes:
       - redis_data:/data
     ports:
@@ -38,7 +38,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    container_name: million-trader-api
+    container_name: winu-bot-signal-api
     environment:
       - POSTGRES_HOST=postgres
       - REDIS_URL=redis://redis:6379/0
@@ -65,7 +65,7 @@ services:
     build:
       context: .
       dockerfile: apps/worker/Dockerfile
-    container_name: million-trader-worker
+    container_name: winu-bot-signal-worker
     environment:
       - POSTGRES_HOST=postgres
       - REDIS_URL=redis://redis:6379/0
@@ -88,7 +88,7 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    container_name: million-trader-web
+    container_name: winu-bot-signal-web
     environment:
       - NEXTAUTH_URL=http://localhost:3003
       - NEXT_PUBLIC_API_URL=http://localhost:8000
@@ -104,7 +104,7 @@ services:
 
   prometheus:
     image: prom/prometheus:latest
-    container_name: million-trader-prometheus
+    container_name: winu-bot-signal-prometheus
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
@@ -120,7 +120,7 @@ services:
 
   grafana:
     image: grafana/grafana:latest
-    container_name: million-trader-grafana
+    container_name: winu-bot-signal-grafana
     ports:
       - "${GRAFANA_PORT:-3001}:3000"
     environment:
@@ -138,7 +138,7 @@ services:
     build:
       context: .
       dockerfile: apps/worker/Dockerfile
-    container_name: million-trader-celery-beat
+    container_name: winu-bot-signal-celery-beat
     command: celery -A worker beat --loglevel=info
     environment:
       - POSTGRES_HOST=postgres
@@ -163,6 +163,6 @@ volumes:
 
 networks:
   default:
-    name: million-trader-network
+    name: winu-bot-signal-network
 
 

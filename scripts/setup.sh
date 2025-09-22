@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Million Trader Setup Script
+# Winu Bot Signal Setup Script
 # This script sets up the development environment
 
 set -e
 
-echo "🚀 Setting up Million Trader..."
+echo "🚀 Setting up Winu Bot Signal..."
 
 # Check if Docker and Docker Compose are installed
 if ! command -v docker &> /dev/null; then
@@ -73,7 +73,7 @@ else
 fi
 
 echo ""
-echo "🎉 Million Trader setup complete!"
+echo "🎉 Winu Bot Signal setup complete!"
 echo ""
 echo "📊 Access points:"
 echo "  • Web Dashboard: http://localhost:3003"
