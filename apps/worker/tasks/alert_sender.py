@@ -117,3 +117,6 @@ class AlertSenderTask:
             logger.error(f"Failed to send Discord alert for signal {signal.id}: {e}")
             return False
 
+
+
+

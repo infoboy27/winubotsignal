@@ -9,7 +9,8 @@ sys.path.append('/packages')
 
 from common.database import User
 from common.logging import get_logger
-from .auth import get_current_active_user, UserResponse
+from .auth import get_current_active_user
+from dependencies import get_db
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -25,10 +26,29 @@ class UserSettingsUpdate(BaseModel):
     min_signal_score: float
 
 
+class UserResponse(BaseModel):
+    """User response schema."""
+    id: int
+    username: str
+    email: str
+    is_active: bool
+    is_admin: bool
+    risk_percent: float
+    max_positions: int
+    telegram_enabled: bool
+    discord_enabled: bool
+    email_enabled: bool
+    min_signal_score: float
+    created_at: str
+    
+    class Config:
+        from_attributes = True
+
+
 @router.put("/settings", response_model=UserResponse)
 async def update_user_settings(
     settings: UserSettingsUpdate,
-    db: AsyncSession = Depends(lambda: None),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Update user settings."""
@@ -44,4 +64,6 @@ async def update_user_settings(
     
     logger.info(f"Updated settings for user {current_user.username}")
     return current_user
+
+
 

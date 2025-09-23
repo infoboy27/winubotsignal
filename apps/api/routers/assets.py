@@ -13,6 +13,7 @@ from common.database import Asset, User
 from common.schemas import Asset as AssetSchema
 from common.logging import get_logger
 from .auth import get_current_active_user
+from dependencies import get_db
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -24,7 +25,7 @@ async def get_assets(
     active_only: bool = Query(True, description="Only return active assets"),
     limit: int = Query(100, ge=1, le=1000, description="Number of assets to return"),
     offset: int = Query(0, ge=0, description="Number of assets to skip"),
-    db: AsyncSession = Depends(lambda: None),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Get available trading assets/pairs."""
@@ -48,7 +49,7 @@ async def get_assets(
 @router.get("/top", response_model=List[AssetSchema])
 async def get_top_assets(
     limit: int = Query(50, ge=1, le=200, description="Number of top assets to return"),
-    db: AsyncSession = Depends(lambda: None),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Get top assets by market cap or volume."""
@@ -68,7 +69,7 @@ async def get_top_assets(
 @router.get("/{symbol}", response_model=AssetSchema)
 async def get_asset(
     symbol: str,
-    db: AsyncSession = Depends(lambda: None),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Get specific asset by symbol."""
@@ -82,4 +83,6 @@ async def get_asset(
         raise HTTPException(status_code=404, detail="Asset not found")
     
     return asset
+
+
 

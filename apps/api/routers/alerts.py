@@ -14,6 +14,7 @@ from common.database import Alert, Signal, User
 from common.schemas import Alert as AlertSchema, AlertChannel
 from common.logging import get_logger
 from .auth import get_current_active_user
+from dependencies import get_db
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -25,7 +26,7 @@ async def get_recent_alerts(
     success_only: bool = Query(False, description="Only return successful alerts"),
     hours: int = Query(24, ge=1, le=168, description="Hours to look back"),
     limit: int = Query(50, ge=1, le=500, description="Number of alerts to return"),
-    db: AsyncSession = Depends(lambda: None),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Get recent alerts."""
@@ -55,7 +56,7 @@ async def get_recent_alerts(
 @router.get("/stats")
 async def get_alert_stats(
     days: int = Query(7, ge=1, le=30, description="Number of days to analyze"),
-    db: AsyncSession = Depends(lambda: None),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Get alert statistics."""
@@ -97,4 +98,6 @@ async def get_alert_stats(
         "success_rate_percent": round(success_rate, 2),
         "by_channel": channel_stats
     }
+
+
 

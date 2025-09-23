@@ -30,18 +30,8 @@ logger = get_logger(__name__)
 
 settings = get_settings()
 
-# Database setup
-engine = create_async_engine(
-    settings.database.url,
-    echo=settings.monitoring.debug,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20
-)
-
-AsyncSessionLocal = sessionmaker(
-    engine, class_=AsyncSession, expire_on_commit=False
-)
+# Import database setup from dependencies
+from dependencies import engine, AsyncSessionLocal
 
 # Redis setup
 redis_client = None
@@ -186,7 +176,12 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3003", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3003", 
+        "http://localhost:3000",
+        "https://dashboard.winu.app",
+        "https://api.winu.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -282,14 +277,8 @@ async def root():
     }
 
 
-# Dependency to get database session
-async def get_db():
-    """Database session dependency."""
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+# Import database dependency
+from dependencies import get_db
 
 
 # Dependency to get Redis client

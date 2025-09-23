@@ -34,3 +34,6 @@ USER worker
 # Run the worker
 CMD ["celery", "-A", "worker", "worker", "--loglevel=info", "--concurrency=4"]
 
+
+
+

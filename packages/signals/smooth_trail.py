@@ -265,3 +265,6 @@ class SmoothTrailAnalyzer:
         
         return {"entry": None, "stop_loss": None, "confidence": 0.0}
 
+
+
+

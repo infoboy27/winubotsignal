@@ -19,7 +19,9 @@ export default function RealTimeAlerts() {
 
   useEffect(() => {
     // Connect to WebSocket
-    const socketConnection = io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000', {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.winu.app'
+    const wsUrl = apiUrl.replace('http://', 'ws://').replace('https://', 'wss://')
+    const socketConnection = io(wsUrl, {
       path: '/ws/alerts',
       transports: ['websocket', 'polling']
     })
@@ -134,4 +136,7 @@ export default function RealTimeAlerts() {
     </div>
   )
 }
+
+
+
 

@@ -17,3 +17,6 @@ class MarketScannerTask:
         # Implementation handled in main worker.py
         pass
 
+
+
+

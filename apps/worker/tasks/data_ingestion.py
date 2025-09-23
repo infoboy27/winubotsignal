@@ -322,3 +322,6 @@ class DataIngestionTask:
             db.rollback()
             return 0
 
+
+
+

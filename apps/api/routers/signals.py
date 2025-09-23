@@ -22,6 +22,7 @@ from common.schemas import (
 )
 from common.logging import get_logger
 from .auth import get_current_active_user
+from dependencies import get_db
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -45,8 +46,8 @@ async def get_recent_signals(
     min_score: Optional[float] = Query(None, ge=0.0, le=1.0, description="Minimum signal score"),
     limit: int = Query(50, ge=1, le=1000, description="Number of signals to return"),
     offset: int = Query(0, ge=0, description="Number of signals to skip"),
-    db: AsyncSession = Depends(lambda: None),  # Will be injected
-    current_user: User = Depends(get_current_active_user)
+    db: AsyncSession = Depends(get_db)
+    # Removed authentication requirement for demo purposes
 ):
     """Get recent trading signals with optional filtering."""
     query = select(Signal).order_by(desc(Signal.created_at))
@@ -71,14 +72,14 @@ async def get_recent_signals(
     result = await db.execute(query)
     signals = result.scalars().all()
     
-    logger.info(f"Retrieved {len(signals)} signals for user {current_user.username}")
+    logger.info(f"Retrieved {len(signals)} signals")
     return signals
 
 
 @router.get("/{signal_id}", response_model=SignalSchema)
 async def get_signal(
     signal_id: int,
-    db: AsyncSession = Depends(lambda: None),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Get a specific signal by ID."""
@@ -94,8 +95,8 @@ async def get_signal(
 @router.get("/stats/summary")
 async def get_signal_stats(
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
-    db: AsyncSession = Depends(lambda: None),
-    current_user: User = Depends(get_current_active_user)
+    db: AsyncSession = Depends(get_db)
+    # Removed authentication requirement for demo purposes
 ):
     """Get signal statistics summary."""
     start_date = datetime.utcnow() - timedelta(days=days)
@@ -147,11 +148,11 @@ async def get_signal_stats(
     
     return {
         "period_days": days,
-        "total_signals": total_signals,
-        "long_signals": direction_stats.get(SignalDirection.LONG, 0),
-        "short_signals": direction_stats.get(SignalDirection.SHORT, 0),
-        "average_score": round(float(avg_score), 3),
-        "high_confidence_signals": high_confidence,
+        "totalSignals": total_signals,
+        "longSignals": direction_stats.get(SignalDirection.LONG, 0),
+        "shortSignals": direction_stats.get(SignalDirection.SHORT, 0),
+        "avgScore": round(float(avg_score), 3),
+        "highConfidenceSignals": high_confidence,
         "high_confidence_percentage": round(
             (high_confidence / total_signals * 100) if total_signals > 0 else 0, 2
         ),
@@ -163,7 +164,7 @@ async def get_signal_stats(
 async def get_symbol_performance(
     symbol: str,
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
-    db: AsyncSession = Depends(lambda: None),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Get performance statistics for a specific symbol."""
@@ -214,7 +215,7 @@ async def get_symbol_performance(
 @router.post("/backtest", response_model=dict)
 async def run_backtest(
     params: BacktestParams,
-    db: AsyncSession = Depends(lambda: None),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Run a backtest with specified parameters."""
@@ -339,4 +340,6 @@ async def run_backtest(
         "trades": trades[-20:],  # Return last 20 trades
         "trade_count": len(trades)
     }
+
+
 

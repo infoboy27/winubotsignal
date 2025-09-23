@@ -6,6 +6,9 @@ import SignalsList from '@/components/SignalsList'
 import StatsCards from '@/components/StatsCards'
 import RealTimeAlerts from '@/components/RealTimeAlerts'
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic'
+
 export default function HomePage() {
   const [stats, setStats] = useState({
     totalSignals: 0,
@@ -14,9 +17,11 @@ export default function HomePage() {
     avgScore: 0,
     highConfidenceSignals: 0
   })
+  const [isLoading, setIsLoading] = useState(true)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    // Fetch initial stats
+    setMounted(true)
     fetchStats()
   }, [])
 
@@ -29,7 +34,17 @@ export default function HomePage() {
       }
     } catch (error) {
       console.error('Failed to fetch stats:', error)
+    } finally {
+      setIsLoading(false)
     }
+  }
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      </div>
+    )
   }
 
   return (
@@ -68,7 +83,14 @@ export default function HomePage() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Stats Cards */}
-        <StatsCards stats={stats} />
+        {isLoading ? (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading dashboard data...</p>
+          </div>
+        ) : (
+          <StatsCards stats={stats} />
+        )}
 
         {/* Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">

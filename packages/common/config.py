@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings
 
 class DatabaseSettings(BaseSettings):
     """Database configuration."""
-    host: str = Field(default="localhost", env="POSTGRES_HOST")
+    host: str = Field(default="postgres", env="POSTGRES_HOST")
     port: int = Field(default=5432, env="POSTGRES_PORT")
     database: str = Field(default="million", env="POSTGRES_DB")
     username: str = Field(default="million", env="POSTGRES_USER")

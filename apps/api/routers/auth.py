@@ -17,6 +17,7 @@ sys.path.append('/packages')
 from common.config import get_settings
 from common.database import User
 from common.logging import get_logger
+from dependencies import get_db
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -121,7 +122,7 @@ async def authenticate_user(db: AsyncSession, username: str, password: str) -> O
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(lambda: None)  # Will be injected by dependency_overrides
+    db: AsyncSession = Depends(get_db)
 ) -> User:
     """Get current authenticated user."""
     credentials_exception = HTTPException(
@@ -252,4 +253,6 @@ async def refresh_token(
         "token_type": "bearer",
         "expires_in": settings.api.jwt_expire_minutes * 60
     }
+
+
 
