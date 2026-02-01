@@ -38,36 +38,24 @@ class DataIngestionTask:
         exchanges = {}
         
         try:
-            # Binance
-            if settings.exchange.binance_api_key and settings.exchange.binance_api_secret:
-                exchanges['binance'] = ccxt.binance({
-                    'apiKey': settings.exchange.binance_api_key,
-                    'secret': settings.exchange.binance_api_secret,
-                    'sandbox': False,
-                    'rateLimit': 1200,
-                    'enableRateLimit': True,
-                })
-            else:
-                # Use public API only
-                exchanges['binance'] = ccxt.binance({
-                    'rateLimit': 1200,
-                    'enableRateLimit': True,
-                })
+            # Binance - Use public API for now
+            exchanges['binance'] = ccxt.binance({
+                'rateLimit': 1200,
+                'enableRateLimit': True,
+                'sandbox': False,
+                'options': {
+                    'defaultType': 'spot'
+                }
+            })
             
-            # Gate.io
-            if settings.exchange.gate_api_key and settings.exchange.gate_api_secret:
-                exchanges['gate'] = ccxt.gate({
-                    'apiKey': settings.exchange.gate_api_key,
-                    'secret': settings.exchange.gate_api_secret,
-                    'sandbox': False,
-                    'rateLimit': 1000,
-                    'enableRateLimit': True,
-                })
-            else:
-                exchanges['gate'] = ccxt.gate({
-                    'rateLimit': 1000,
-                    'enableRateLimit': True,
-                })
+            # Load markets to ensure they're available
+            exchanges['binance'].load_markets()
+            
+            # Temporarily disable Gate.io due to API issues
+            # exchanges['gate'] = ccxt.gate({
+            #     'rateLimit': 1000,
+            #     'enableRateLimit': True,
+            # })
                 
             logger.info(f"Initialized {len(exchanges)} exchanges")
             
@@ -141,12 +129,12 @@ class DataIngestionTask:
         """Ingest OHLCV data for specified symbols and timeframes."""
         
         if timeframes is None:
-            timeframes = settings.trading.timeframes
+            timeframes = ["1m", "5m", "15m", "1h", "4h", "1d"]  # Default timeframes
         
         # Get active assets if no symbols specified
         if not symbols:
             assets = db.execute(
-                select(Asset).where(Asset.active == True).limit(settings.trading.top_coins_count)
+                select(Asset).where(Asset.active == True)
             ).scalars().all()
             symbols = [asset.symbol for asset in assets]
         
@@ -175,6 +163,9 @@ class DataIngestionTask:
         """Ingest data for a specific timeframe."""
         candles_ingested = 0
         
+        # Debug: Check timeframe value
+        logger.info(f"Processing timeframe: {timeframe} (type: {type(timeframe)})")
+        
         # Determine how much historical data to fetch
         if timeframe in ['1m', '5m']:
             days_back = 7  # 1 week for minute data
@@ -199,7 +190,28 @@ class DataIngestionTask:
                 try:
                     # Check if symbol exists on this exchange
                     if symbol not in exchange.markets:
-                        continue
+                        logger.warning(f"Symbol {symbol} not found on {exchange_name}, trying alternative formats")
+                        # Try alternative symbol formats for SYRUP and POKT
+                        if symbol == 'SYRUP/USDT':
+                            # Try different formats
+                            alt_symbols = ['SYRUPUSDT', 'SYRUP_USDT', 'SYRUP/USD']
+                        elif symbol == 'POKT/USDT':
+                            alt_symbols = ['POKTUSDT', 'POKT_USDT', 'POKT/USD']
+                        else:
+                            continue
+                        
+                        found_symbol = None
+                        for alt_symbol in alt_symbols:
+                            if alt_symbol in exchange.markets:
+                                found_symbol = alt_symbol
+                                logger.info(f"Found {symbol} as {alt_symbol} on {exchange_name}")
+                                break
+                        
+                        if not found_symbol:
+                            logger.warning(f"Symbol {symbol} not found in any format on {exchange_name}")
+                            continue
+                        else:
+                            symbol = found_symbol
                     
                     # Get the last timestamp we have data for
                     last_candle = db.execute(
@@ -213,20 +225,37 @@ class DataIngestionTask:
                     if last_candle:
                         # Fetch only new data
                         since = int(last_candle.timestamp.timestamp() * 1000)
+                    else:
+                        since = None
+                    
+                    logger.info(f"Fetching {symbol} {timeframe} with since={since}, limit={limit}")
+                    
+                    # Map timeframe to exchange format
+                    exchange_timeframe = self.timeframe_mapping.get(timeframe, timeframe)
                     
                     # Fetch OHLCV data
-                    ohlcv_data = exchange.fetch_ohlcv(
-                        symbol, 
-                        timeframe, 
-                        since=since, 
-                        limit=limit
-                    )
+                    try:
+                        ohlcv_data = exchange.fetch_ohlcv(
+                            symbol, 
+                            exchange_timeframe, 
+                            since=since, 
+                            limit=limit
+                        )
+                        logger.info(f"Raw fetch result for {symbol} {timeframe}: {type(ohlcv_data)} - {len(ohlcv_data) if ohlcv_data else 'None'}")
+                    except Exception as fetch_error:
+                        logger.error(f"Exchange fetch_ohlcv failed for {symbol} {timeframe} from {exchange_name}: {fetch_error}")
+                        continue
                     
-                    if not ohlcv_data:
+                    logger.info(f"Fetched data for {symbol} {timeframe}: {type(ohlcv_data)} - {len(ohlcv_data) if ohlcv_data else 'None'}")
+                    
+                    if not ohlcv_data or ohlcv_data is None:
+                        logger.warning(f"No data returned for {symbol} {timeframe} from {exchange_name}")
                         continue
                     
                     # Convert and save data
-                    for candle_data in ohlcv_data:
+                    logger.info(f"Starting iteration over {len(ohlcv_data)} candles for {symbol} {timeframe}")
+                    for i, candle_data in enumerate(ohlcv_data):
+                        logger.info(f"Processing candle {i} for {symbol} {timeframe}: {type(candle_data)} - {candle_data if candle_data else 'None'}")
                         timestamp = timestamp_to_datetime(candle_data[0])
                         
                         # Check if candle already exists

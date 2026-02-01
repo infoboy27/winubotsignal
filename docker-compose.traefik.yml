@@ -4,6 +4,8 @@ services:
   postgres:
     image: timescale/timescaledb:latest-pg15
     container_name: winu-bot-signal-postgres
+    env_file:
+      - production.env
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-winudb}
       POSTGRES_USER: ${POSTGRES_USER:-winu}
@@ -11,8 +13,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./deployments/init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-winu}"]
       interval: 10s
@@ -25,10 +25,10 @@ services:
   redis:
     image: redis:7-alpine
     container_name: winu-bot-signal-redis
+    env_file:
+      - production.env
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -39,8 +39,10 @@ services:
       - winu-bot-signal-network
 
   traefik:
-    image: traefik:v2.10
+    image: traefik:latest
     container_name: winu-bot-signal-traefik
+    env_file:
+      - production.env
     command:
       - "--api.dashboard=true"
       - "--api.debug=true"
@@ -63,7 +65,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080"  # Traefik dashboard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik_data:/data
@@ -82,21 +83,40 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     container_name: winu-bot-signal-api
+    env_file:
+      - production.env
     environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=winudb
-      - POSTGRES_USER=winu
-      - POSTGRES_PASSWORD=winu250420
-      - REDIS_URL=redis://redis:6379/0
-      - JWT_SECRET=this-is-a-very-long-and-secure-jwt-secret-key-for-production-use-only
-      - MAX_POSITIONS=10
-      - SCAN_INTERVAL_SECONDS=30
-      - MIN_SIGNAL_SCORE=0.65
-      - MIN_VOLUME_USD=100000
-      - TOP_COINS_COUNT=200
-    ports:
-      - "8000:8001"
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-winudb}
+      - POSTGRES_USER=${POSTGRES_USER:-winu}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-winu250420}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - JWT_SECRET=${JWT_SECRET:-302c4665d626ccf70553682a8038be89}
+      - CMC_API_KEY=cf4adeca-6d01-41c4-86a6-e5c910f6131c
+      - COINGECKO_API_BASE=${COINGECKO_API_BASE}
+      - BINANCE_API_KEY=d0lCWOt7T97QIma41JqG0gZRG31Lg1JwA6x9Y75sLvW9YSqFcTwp4BnKDL1uD3hk
+      - BINANCE_API_SECRET=ZfcdYTESWV6eiT98WhQsVZ9e5mljxEYevcDAuwSw54Ashn8nwfxPxcEoaxjTWGE3
+      - GATE_API_KEY=e7febafe122009e8b1976efc3ef9f26d
+      - GATE_API_SECRET=your_gate_api_secret_here
+      - TELEGRAM_BOT_TOKEN=8207982904:AAH4uH8DTA-b4wrVl0Azw90Hq3wfdUX-H4s
+      - TELEGRAM_CHAT_ID=-1002965656200
+      - DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/1403506993561604146/vdNcN2zSZTQmybN0NZXAHtTUj1wQFN4QK5lXKgibTnFoeOVY4fwsKKyVP7kIJRnOth8k
+      - API_HOST=${API_HOST:-0.0.0.0}
+      - API_PORT=${API_PORT:-8001}
+      - NODE_ENV=${NODE_ENV:-production}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - DEFAULT_RISK_PERCENT=${DEFAULT_RISK_PERCENT:-1.0}
+      - MAX_DAILY_LOSS_PERCENT=${MAX_DAILY_LOSS_PERCENT:-5.0}
+      - MAX_POSITIONS=${MAX_POSITIONS:-10}
+      - SCAN_INTERVAL_SECONDS=${SCAN_INTERVAL_SECONDS:-30}
+      - MIN_SIGNAL_SCORE=${MIN_SIGNAL_SCORE:-0.65}
+      - MIN_VOLUME_USD=${MIN_VOLUME_USD:-100000}
+      - TIMEFRAMES=${TIMEFRAMES:-1m,5m,15m,1h,4h,1d}
+      - TOP_COINS_COUNT=15
+      - BACKTEST_START_DATE=${BACKTEST_START_DATE:-2024-01-01}
+      - BACKTEST_INITIAL_BALANCE=${BACKTEST_INITIAL_BALANCE:-10000}
     depends_on:
       postgres:
         condition: service_healthy
@@ -131,13 +151,17 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://api.${DOMAIN:-winu.app}
     container_name: winu-bot-signal-web
+    env_file:
+      - production.env
     environment:
       - NEXTAUTH_URL=https://dashboard.${DOMAIN:-winu.app}
       - NEXT_PUBLIC_API_URL=https://api.${DOMAIN:-winu.app}
       - API_URL_INTERNAL=http://api:8001
-    ports:
-      - "3003:3000"
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NODE_ENV=${NODE_ENV:-production}
     depends_on:
       - api
     volumes:
@@ -149,28 +173,35 @@ services:
       - winu-bot-signal-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.web.rule=Host(`dashboard.${DOMAIN:-winu.app}`)"
-      - "traefik.http.routers.web.entrypoints=websecure"
-      - "traefik.http.routers.web.tls.certresolver=cloudflare"
+      # Dashboard subdomain routing
+      - "traefik.http.routers.dashboard.rule=Host(`dashboard.winu.app`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls.certresolver=cloudflare"
+      - "traefik.http.routers.dashboard.service=web@docker"
+      # Main domain routing (landing page)
+      - "traefik.http.routers.landing.rule=Host(`winu.app`)"
+      - "traefik.http.routers.landing.entrypoints=websecure"
+      - "traefik.http.routers.landing.tls.certresolver=cloudflare"
+      - "traefik.http.routers.landing.service=web@docker"
+      # Service configuration
       - "traefik.http.services.web.loadbalancer.server.port=3000"
 
   worker:
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
+      dockerfile: apps/worker/Dockerfile
     container_name: winu-bot-signal-worker
-    command: ["celery", "-A", "worker", "worker", "--loglevel=info", "--concurrency=2"]
-    environment:
-      - POSTGRES_HOST=postgres
-      - REDIS_URL=redis://redis:6379/0
-      - JWT_SECRET=this-is-a-very-long-and-secure-jwt-secret-key-for-production-use-only
+    working_dir: /app
+    env_file:
+      - production.env
+    command: ["celery", "-A", "worker:app", "worker", "--loglevel=info", "--concurrency=2"]
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
-      - ./apps/api:/app
+      - ./apps/worker:/app
       - ./packages:/packages
     restart: unless-stopped
     networks:
@@ -179,32 +210,64 @@ services:
   celery-beat:
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
+      dockerfile: apps/worker/Dockerfile
     container_name: winu-bot-signal-celery-beat
-    command: ["celery", "-A", "worker", "beat", "--loglevel=info"]
-    environment:
-      - POSTGRES_HOST=postgres
-      - REDIS_URL=redis://redis:6379/0
-      - JWT_SECRET=this-is-a-very-long-and-secure-jwt-secret-key-for-production-use-only
+    working_dir: /app
+    env_file:
+      - production.env
+    command: ["celery", "-A", "worker:app", "beat", "--loglevel=info"]
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
-      - ./apps/api:/app
+      - ./apps/worker:/app
       - ./packages:/packages
     restart: unless-stopped
     networks:
       - winu-bot-signal-network
 
+  trading-bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: winu-bot-signal-trading-bot
+    working_dir: /app
+    env_file:
+      - production.env
+    environment:
+      - POSTGRES_HOST=postgres
+      - REDIS_URL=redis://redis:6379/0
+      - BOT_TEST_MODE=false
+      - PYTHONPATH=/app:/packages
+    command: ["python", "core/trading_bot.py"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./bot:/app
+      - ./packages:/packages
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep 'python.*trading_bot' | grep -v grep || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
   prometheus:
     image: prom/prometheus:latest
     container_name: winu-bot-signal-prometheus
-    ports:
-      - "9090:9090"
+    env_file:
+      - production.env
     volumes:
       - ./deployments/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./deployments/alert-rules:/etc/prometheus/alert-rules
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -220,23 +283,173 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: winu-bot-signal-grafana
-    ports:
-      - "3001:3000"
+    env_file:
+      - production.env
     volumes:
       - grafana_data:/var/lib/grafana
       - ./deployments/grafana/provisioning:/etc/grafana/provisioning
+      - ./deployments/grafana/dashboards:/var/lib/grafana/dashboards
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
     restart: unless-stopped
     networks:
       - winu-bot-signal-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN:-winu.app}`)"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN:-winu.app}`) || Host(`monitor.${DOMAIN:-winu.app}`)"
       - "traefik.http.routers.grafana.entrypoints=websecure"
-      - "traefik.http.routers.grafana.tls.certresolver=cloudflare"
+      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
       - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  # Monitoring exporters
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: winu-bot-signal-postgres-exporter
+    env_file:
+      - production.env
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER:-winu}:${POSTGRES_PASSWORD:-winu250420}@postgres:5432/${POSTGRES_DB:-winudb}?sslmode=disable
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: winu-bot-signal-redis-exporter
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: winu-bot-signal-node-exporter
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: winu-bot-signal-alertmanager
+    env_file:
+      - production.env
+    volumes:
+      - ./deployments/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  metrics-exporter:
+    build:
+      context: .
+      dockerfile: apps/monitoring/Dockerfile
+    container_name: winu-bot-signal-metrics-exporter
+    env_file:
+      - production.env
+    environment:
+      - API_BASE_URL=https://winu.app/api
+    command: ["python3", "metrics_exporter.py", "--port", "8002", "--interval", "30"]
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  # Ollama LLM Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: winu-bot-signal-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+
+  # MCP Server (Market Intelligence)
+  mcp-server:
+    build:
+      context: .
+      dockerfile: apps/mcp-server/Dockerfile
+    container_name: winu-bot-signal-mcp-server
+    env_file:
+      - production.env
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=llama3.2:1b
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-winu}:${POSTGRES_PASSWORD:-winu250420}@postgres:5432/${POSTGRES_DB:-winudb}
+    depends_on:
+      - ollama
+      - postgres
+    ports:
+      - "8003:8003"
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mcp-api.rule=Host(`mcp-api.${DOMAIN:-winu.app}`)"
+      - "traefik.http.routers.mcp-api.entrypoints=websecure"
+      - "traefik.http.routers.mcp-api.tls.certresolver=cloudflare"
+      - "traefik.http.services.mcp-api.loadbalancer.server.port=8003"
+      - "traefik.http.middlewares.mcp-cors.headers.accesscontrolallowmethods=GET,OPTIONS,POST,PUT,DELETE"
+      - "traefik.http.middlewares.mcp-cors.headers.accesscontrolallowheaders=*"
+      - "traefik.http.middlewares.mcp-cors.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.routers.mcp-api.middlewares=mcp-cors"
+
+  # Chat Interface
+  chat:
+    build:
+      context: .
+      dockerfile: apps/chat/Dockerfile
+    container_name: winu-bot-signal-chat
+    env_file:
+      - production.env
+    environment:
+      - NEXT_PUBLIC_MCP_API_URL=https://mcp-api.${DOMAIN:-winu.app}
+      - MCP_SERVER_URL=http://mcp-server:8003
+      - NODE_ENV=production
+    depends_on:
+      - mcp-server
+    volumes:
+      - ./apps/chat:/app
+      - /app/node_modules
+      - /app/.next
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.chat.rule=Host(`chat.${DOMAIN:-winu.app}`)"
+      - "traefik.http.routers.chat.entrypoints=websecure"
+      - "traefik.http.routers.chat.tls.certresolver=cloudflare"
+      - "traefik.http.routers.chat.service=chat@docker"
+      - "traefik.http.services.chat.loadbalancer.server.port=3001"
 
 volumes:
   postgres_data:
@@ -244,6 +457,8 @@ volumes:
   prometheus_data:
   grafana_data:
   traefik_data:
+  alertmanager_data:
+  ollama_data:
 
 networks:
   winu-bot-signal-network:

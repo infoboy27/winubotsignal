@@ -1,0 +1,26 @@
+[Unit]
+Description=Winu Bot Signal Background Monitor
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/winubotsignal
+ExecStart=/usr/bin/python3 /home/ubuntu/winubotsignal/background_monitor.py start 60
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment variables
+Environment=DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/1403506993561604146/vdNcN2zSZTQmybN0NZXAHtTUj1wQFN4QK5lXKgibTnFoeOVY4fwsKKyVP7kIJRnOth8k
+
+[Install]
+WantedBy=multi-user.target
+
+
+
+
+

@@ -247,6 +247,94 @@ class APIResponse(BaseModel):
     """Generic API response wrapper."""
     success: bool
     data: Optional[Any] = None
+
+
+class SubscriptionPlanSchema(BaseModel):
+    """Subscription plan schema."""
+    id: str
+    name: str
+    price_usd: Decimal
+    price_usdt: Decimal
+    interval: str
+    duration_days: Optional[int]
+    dashboard_access_limit: int
+    features: List[str]
+    telegram_access: bool
+    support_level: str
+    binance_pay_id: Optional[str]
+    is_active: bool
+    
+    class Config:
+        from_attributes = True
+
+
+class PaymentTransactionSchema(BaseModel):
+    """Payment transaction schema."""
+    id: int
+    user_id: int
+    plan_id: str
+    amount_usd: Decimal
+    amount_usdt: Decimal
+    payment_method: str
+    transaction_id: Optional[str]
+    status: str
+    payment_data: Optional[Dict[str, Any]]
+    completed_at: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class TelegramGroupAccessSchema(BaseModel):
+    """Telegram group access schema."""
+    id: int
+    user_id: int
+    telegram_user_id: Optional[str]
+    telegram_username: Optional[str]
+    group_name: str
+    access_granted_at: datetime
+    access_revoked_at: Optional[datetime]
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class UserSubscriptionInfo(BaseModel):
+    """User subscription information schema."""
+    subscription_tier: str
+    subscription_status: str
+    trial_used: bool = False
+    trial_start_date: Optional[datetime] = None
+    trial_dashboard_access_count: int = 0
+    payment_due_date: Optional[datetime] = None
+    access_revoked_at: Optional[datetime] = None
+    current_plan: Optional[SubscriptionPlanSchema] = None
+    telegram_access: List[TelegramGroupAccessSchema] = Field(default_factory=list)
+    
+    class Config:
+        from_attributes = True
+
+
+class BinancePaySubscriptionRequest(BaseModel):
+    """Binance Pay subscription request."""
+    plan_id: str
+    telegram_user_id: Optional[str] = None
+    telegram_username: Optional[str] = None
+
+
+class SubscriptionAccessCheck(BaseModel):
+    """Subscription access check result."""
+    access: bool
+    reason: str
+    tier: str
+    trial_days_remaining: Optional[int] = None
+    dashboard_access_remaining: Optional[int] = None
+    payment_due_date: Optional[datetime] = None
     message: Optional[str] = None
     errors: Optional[List[str]] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
@@ -261,4 +349,98 @@ class PaginatedResponse(BaseModel):
     pages: int
     has_next: bool
     has_prev: bool
+
+
+class SubscriptionStatus(str, Enum):
+    """Subscription status options."""
+    ACTIVE = "active"
+    PAST_DUE = "past_due"
+    CANCELED = "canceled"
+    INACTIVE = "inactive"
+
+
+class SubscriptionPlan(BaseModel):
+    """Subscription plan schema."""
+    id: str
+    name: str
+    price: float
+    currency: str = "usd"
+    interval: str  # month, year
+    features: List[str] = Field(default_factory=list)
+
+
+class UserSubscription(BaseModel):
+    """User subscription information."""
+    status: SubscriptionStatus
+    current_period_end: Optional[datetime]
+    plan_id: Optional[str]
+    stripe_customer_id: Optional[str]
+    stripe_subscription_id: Optional[str]
+    telegram_user_id: Optional[str]
+    subscription_created_at: Optional[datetime]
+    subscription_updated_at: Optional[datetime]
+
+
+class CheckoutSessionRequest(BaseModel):
+    """Request to create Stripe checkout session."""
+    plan_id: str
+    success_url: str
+    cancel_url: str
+    email: Optional[str] = None  # For guest checkout
+
+
+class CheckoutSessionResponse(BaseModel):
+    """Response with Stripe checkout session URL."""
+    session_url: str
+    session_id: str
+
+
+class SubscriptionEventSchema(BaseModel):
+    """Subscription event schema."""
+    id: int
+    user_id: int
+    event_type: str
+    stripe_event_id: str
+    event_data: Dict[str, Any]
+    processed: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class TrendingCoinSchema(BaseModel):
+    """Trending coin schema."""
+    id: int
+    symbol: str
+    name: str
+    base: str
+    quote: str
+    active: bool
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class TrendingSignalSchema(BaseModel):
+    """Trending signal schema."""
+    id: int
+    symbol: str
+    direction: SignalDirection
+    score: float
+    timeframe: TimeFrame
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class TrendingStatsSchema(BaseModel):
+    """Trending statistics schema."""
+    total_assets: int
+    trending_signals_24h: int
+    total_signals_24h: int
+    trending_percentage: float
 

@@ -388,17 +388,43 @@ def create_alert_message(signal: Dict[str, Any]) -> str:
     
     confluence_str = ", ".join(confluence_text) if confluence_text else "Basic setup"
     
-    message = f"""[Million Trader] New Signal ({signal['timeframe']}) {direction_emoji}
+    # Format money amounts with proper currency formatting
+    def format_price(price):
+        if price == 'N/A' or price is None:
+            return 'N/A'
+        try:
+            price_float = float(price)
+            if price_float >= 1000:
+                return f"${price_float:,.2f}"
+            else:
+                return f"${price_float:.4f}"
+        except (ValueError, TypeError):
+            return str(price)
+    
+    # Modern alert template with better formatting
+    score_emoji = "🔥" if signal['score'] >= 0.8 else "⚡" if signal['score'] >= 0.6 else "📊"
+    confidence_level = "HIGH" if signal['score'] >= 0.8 else "MEDIUM" if signal['score'] >= 0.6 else "LOW"
+    
+    message = f"""🤖 **WINU BOT SIGNAL** {direction_emoji} {score_emoji}
 
-Symbol: {signal['symbol']} — Direction: {signal['direction']}
-Entry: {signal.get('entry_price', 'Market')} | SL: {signal.get('stop_loss', 'N/A')}
-TP1: {signal.get('take_profit_1', 'N/A')} | TP2: {signal.get('take_profit_2', 'N/A')} | TP3: {signal.get('take_profit_3', 'N/A')}
-AI Score: {signal['score']:.2f} | R:R: {signal.get('risk_reward_ratio', 'N/A')}
+**{signal['symbol']}** • {signal['timeframe']} • {signal['direction']}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Confluences: {confluence_str}
-Timestamp: {signal.get('created_at', utc_now().isoformat())}
+💰 **ENTRY:** `{format_price(signal.get('entry_price', 'Market'))}`
+🛡️ **STOP LOSS:** `{format_price(signal.get('stop_loss', 'N/A'))}`
+🎯 **TAKE PROFITS:**
+   • TP1: `{format_price(signal.get('take_profit_1', 'N/A'))}`
+   • TP2: `{format_price(signal.get('take_profit_2', 'N/A'))}`
+   • TP3: `{format_price(signal.get('take_profit_3', 'N/A'))}`
 
-⚠️ Not financial advice. Trade responsibly."""
+📈 **ANALYSIS:**
+   • AI Score: `{signal['score']:.2f}` ({confidence_level})
+   • Risk/Reward: `{signal.get('risk_reward_ratio', 'N/A')}`
+   • Confluences: {confluence_str}
+
+⏰ **Time:** {signal.get('created_at', utc_now().isoformat())}
+
+⚠️ *Not financial advice. Trade responsibly.*"""
     
     return message
 

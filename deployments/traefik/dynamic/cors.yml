@@ -1,0 +1,20 @@
+http:
+  middlewares:
+    cors:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowOriginList:
+          - "*"
+        accessControlAllowHeaders:
+          - "Content-Type"
+          - "Authorization"
+          - "Origin"
+          - "X-Requested-With"
+        accessControlAllowCredentials: false
+        accessControlMaxAge: 86400
+        addVaryHeader: true

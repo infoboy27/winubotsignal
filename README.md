@@ -43,7 +43,7 @@ This is a monorepo built with:
    ```
 
 3. **Access the dashboard**:
-   - Web Dashboard: http://localhost:3003
+   - Web Dashboard: http://localhost:3005
    - API Documentation: http://localhost:8000/docs
    - Grafana: http://localhost:3001 (admin/admin)
 
@@ -218,11 +218,13 @@ To push this repository to GitHub, you'll need to set up authentication. Here ar
 
 ## Current Status
 
-✅ **Web Dashboard**: Fully functional on port 3003  
+✅ **Web Dashboard**: Fully functional on port 3005  
 ✅ **Database Services**: PostgreSQL and Redis running  
 ✅ **Monitoring**: Prometheus and Grafana operational  
-⚠️ **API Service**: Configuration being resolved  
-⚠️ **Worker Service**: Depends on API service  
+✅ **Security**: CSP headers enabled, rate limiting active
+✅ **Dependencies**: All packages updated to latest versions
+⚠️ **API Service**: Ready for deployment (ensure credentials are rotated)
+⚠️ **Worker Service**: Ready for deployment  
 
 ## Support
 

@@ -66,7 +66,7 @@ export default function StatsCards({ stats }: StatsCardsProps) {
             <div className="mt-2">
               <div className="flex items-center justify-between text-sm text-gray-600">
                 <span>Avg Score</span>
-                <span className="font-medium">{(stats.avgScore * 100).toFixed(1)}%</span>
+                <span className="font-medium">{((stats.avgScore || 0) * 100).toFixed(1)}%</span>
               </div>
             </div>
           )}

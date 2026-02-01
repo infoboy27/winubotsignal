@@ -1,0 +1,56 @@
+groups:
+  - name: winu-bot-alerts
+    rules:
+      - alert: WinuBotAPIDown
+        expr: winu_api_health == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Winu Bot API is down"
+          description: "The Winu Bot API has been down for more than 1 minute"
+
+      - alert: WinuBotDataStale
+        expr: winu_data_freshness_hours > 6
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Winu Bot data is stale"
+          description: "Data has not been updated for {{ $value }} hours"
+
+      - alert: WinuBotWorkerErrors
+        expr: winu_worker_errors == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Winu Bot worker has errors"
+          description: "The worker process is reporting errors"
+
+      - alert: WinuBotNoSignals
+        expr: winu_signals_today == 0 and hour() > 12
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No signals generated today"
+          description: "No trading signals have been generated today after 12:00"
+
+      - alert: WinuBotHighResponseTime
+        expr: rate(winu_api_response_time_seconds_sum[5m]) / rate(winu_api_response_time_seconds_count[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Winu Bot API response time is high"
+          description: "API response time is {{ $value }}s, which is above the threshold"
+
+      - alert: WinuBotDataIngestionFailed
+        expr: rate(winu_data_ingestion_requests_total[1h]) == 0
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Winu Bot data ingestion has stopped"
+          description: "No data ingestion requests have been made in the last hour"

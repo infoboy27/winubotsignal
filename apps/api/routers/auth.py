@@ -2,12 +2,13 @@
 
 from datetime import datetime, timedelta
 from typing import Optional
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, field_validator, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,24 +24,52 @@ router = APIRouter()
 logger = get_logger(__name__)
 settings = get_settings()
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing - use argon2 instead of bcrypt to avoid the 72-byte limit
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 # JWT token scheme
 security = HTTPBearer()
 
+# Username validation pattern: alphanumeric, underscore, hyphen only
+USERNAME_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
+
 
 class UserCreate(BaseModel):
     """User creation schema."""
-    username: str
-    email: str
-    password: str
+    username: str = Field(..., min_length=3, max_length=30)
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    
+    @field_validator('username')
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        """Validate username format."""
+        if not USERNAME_PATTERN.match(v):
+            raise ValueError(
+                'Username must contain only alphanumeric characters, underscores, and hyphens'
+            )
+        
+        # Prevent usernames that might cause confusion
+        if v.lower() in ['admin', 'root', 'system', 'api', 'support', 'help', 'null', 'undefined']:
+            raise ValueError('This username is reserved')
+        
+        return v
 
 
 class UserLogin(BaseModel):
     """User login schema."""
-    username: str
+    username: str = Field(..., min_length=3, max_length=30)
     password: str
+    
+    @field_validator('username')
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        """Validate username format."""
+        if not USERNAME_PATTERN.match(v):
+            raise ValueError(
+                'Username must contain only alphanumeric characters, underscores, and hyphens'
+            )
+        return v
 
 
 class Token(BaseModel):
@@ -64,6 +93,12 @@ class UserResponse(BaseModel):
     email_enabled: bool
     min_signal_score: float
     created_at: datetime
+    # Subscription fields
+    subscription_status: str
+    current_period_end: Optional[datetime]
+    plan_id: Optional[str]
+    stripe_customer_id: Optional[str]
+    telegram_user_id: Optional[str]
     
     class Config:
         from_attributes = True
@@ -160,7 +195,7 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
 @router.post("/register", response_model=UserResponse)
 async def register_user(
     user: UserCreate,
-    db: AsyncSession = Depends(lambda: None)  # Will be injected
+    db: AsyncSession = Depends(get_db)
 ):
     """Register a new user."""
     # Check if user already exists
@@ -197,7 +232,7 @@ async def register_user(
 @router.post("/login", response_model=Token)
 async def login_user(
     user: UserLogin,
-    db: AsyncSession = Depends(lambda: None)  # Will be injected
+    db: AsyncSession = Depends(get_db)
 ):
     """Login user and return JWT token."""
     authenticated_user = await authenticate_user(db, user.username, user.password)
@@ -253,6 +288,30 @@ async def refresh_token(
         "token_type": "bearer",
         "expires_in": settings.api.jwt_expire_minutes * 60
     }
+
+
+@router.get("/subscription-info")
+async def get_subscription_info(
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get current user's subscription information."""
+    from middleware.subscription import get_user_subscription_info
+    
+    try:
+        subscription_info = await get_user_subscription_info(current_user)
+        return subscription_info
+    except Exception as e:
+        # Return default subscription info for users without subscriptions
+        return {
+            "status": "inactive",
+            "is_active": False,
+            "current_period_end": None,
+            "plan_id": None,
+            "has_stripe_customer": False,
+            "telegram_linked": False,
+            "subscription_created_at": None,
+            "subscription_updated_at": None
+        }
 
 
 

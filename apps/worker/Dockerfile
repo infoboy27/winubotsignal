@@ -25,7 +25,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY packages/ /packages/
 
 # Copy application code
-COPY apps/worker/ .
+COPY apps/worker/worker.py .
+COPY apps/worker/__init__.py .
+COPY apps/worker/requirements.txt .
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash worker && chown -R worker:worker /app

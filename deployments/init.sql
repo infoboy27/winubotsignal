@@ -52,26 +52,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Create materialized views for common queries
-CREATE MATERIALIZED VIEW IF NOT EXISTS daily_signal_stats AS
-SELECT 
-    DATE(created_at) as date,
-    COUNT(*) as total_signals,
-    COUNT(*) FILTER (WHERE direction = 'LONG') as long_signals,
-    COUNT(*) FILTER (WHERE direction = 'SHORT') as short_signals,
-    AVG(score) as avg_score,
-    COUNT(*) FILTER (WHERE score >= 0.8) as high_confidence_signals
-FROM signals 
-WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
-GROUP BY DATE(created_at)
-ORDER BY date DESC;
+-- Materialized views will be created after tables are created
 
--- Create index on the materialized view
-CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_signal_stats_date ON daily_signal_stats (date);
-
--- Create a function to refresh materialized views
+-- Create a function to refresh materialized views (will be created after tables)
 CREATE OR REPLACE FUNCTION refresh_materialized_views() RETURNS void AS $$
 BEGIN
-    REFRESH MATERIALIZED VIEW CONCURRENTLY daily_signal_stats;
+    -- Materialized views will be created later
+    NULL;
 END;
 $$ LANGUAGE plpgsql;
 

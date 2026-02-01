@@ -49,7 +49,12 @@ def adx(high, low, close, length=14):
     dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
     adx = dx.rolling(window=length).mean()
     
-    return adx
+    # Return as DataFrame with expected column names
+    return pd.DataFrame({
+        f'ADX_{length}': adx,
+        f'DMP_{length}': plus_di,
+        f'DMN_{length}': minus_di
+    })
 
 def rsi(close, length=14):
     """Relative Strength Index"""

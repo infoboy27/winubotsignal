@@ -17,6 +17,9 @@ pip-delete-this-directory.txt
 .env.development.local
 .env.test.local
 .env.production.local
+production.env
+development.env
+# Keep .env.example for reference
 
 # IDE
 .vscode/
@@ -118,3 +121,24 @@ data/grafana/
 # Build artifacts
 build/
 dist/
+
+# Mobile app (React Native/Expo)
+winu-mobile/node_modules/
+winu-mobile/.expo/
+winu-mobile/.expo-shared/
+winu-mobile/dist/
+winu-mobile/web-build/
+winu-mobile/.next/
+winu-mobile/.env.local
+winu-mobile/.env.development.local
+winu-mobile/.env.test.local
+winu-mobile/.env.production.local
+winu-mobile/*.log
+winu-mobile/.DS_Store
+winu-mobile/android/app/build/
+winu-mobile/ios/build/
+winu-mobile/android/.gradle/
+winu-mobile/android/local.properties
+winu-mobile/ios/Pods/
+winu-mobile/ios/*.xcworkspace
+winu-mobile/ios/*.xcuserdata

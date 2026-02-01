@@ -1,397 +1,413 @@
-"""Celery worker for Million Trader."""
+"""Comprehensive Celery worker for signal generation and alert processing."""
 
-import asyncio
-import json
 import sys
+import os
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-
-import ccxt
-import pandas as pd
-import redis
-from celery import Celery
-from celery.schedules import crontab
+from typing import List, Optional
 from loguru import logger
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
 
 # Add packages to path
+sys.path.append('/')
 sys.path.append('/packages')
+
+from celery import Celery
+from celery.schedules import crontab
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import select, and_, desc, create_engine
 
 from common.config import get_settings
 from common.database import Asset, OHLCV, Signal, Alert
-from common.logging import setup_logging
-from common.schemas import TimeFrame, SignalDirection, AlertChannel
-from signals import SignalGenerator
+from common.schemas import TimeFrame, SignalType, SignalDirection, AlertChannel
+from packages.signals.signal_generator import SignalGenerator
 from tasks.data_ingestion import DataIngestionTask
-from tasks.market_scanner import MarketScannerTask
 from tasks.alert_sender import AlertSenderTask
+from tasks.trending_coins import TrendingCoinsAnalyzer
 
-# Setup logging
-setup_logging()
-logger = logger.bind(service="worker")
-
-settings = get_settings()
+# Import error monitoring
+sys.path.append('/packages')
+from monitoring.error_monitor import error_monitor
 
 # Initialize Celery
-app = Celery('million-trader-worker')
+app = Celery('worker')
 
 # Celery configuration
 app.conf.update(
-    broker_url=settings.redis.broker_url,
-    result_backend=settings.redis.result_backend,
+    broker_url='redis://redis:6379/0',
+    result_backend='redis://redis:6379/1',
     task_serializer='json',
     accept_content=['json'],
     result_serializer='json',
     timezone='UTC',
     enable_utc=True,
-    task_routes={
-        'worker.ingest_market_data': {'queue': 'data_ingestion'},
-        'worker.scan_market': {'queue': 'market_scanning'},
-        'worker.send_alert': {'queue': 'alerts'},
+    beat_schedule={
+        'scan-markets-six-times-daily': {
+            'task': 'worker.scan_markets',
+            'schedule': crontab(hour='8,12,14,16,20,0', minute=0),  # 8am, 12pm, 2pm, 4pm, 8pm, 12am
+        },
+        'trigger-trading-opportunities': {
+            'task': 'worker.trigger_trading_check',
+            'schedule': crontab(hour='8,12,14,16,20,0', minute=2),  # 2 minutes after signal generation
+        },
+        'ingest-data-every-5-minutes': {
+            'task': 'worker.ingest_market_data',
+            'schedule': crontab(minute='*/5'),  # Every 5 minutes
+        },
+        'cleanup-old-signals': {
+            'task': 'worker.cleanup_old_signals',
+            'schedule': crontab(hour=0, minute=0),  # Daily at midnight
+        },
+        'analyze-trending-coins': {
+            'task': 'worker.analyze_trending_coins',
+            'schedule': crontab(minute='*/10'),  # Every 10 minutes
+        },
     },
-    worker_prefetch_multiplier=1,
-    task_acks_late=True,
-    worker_max_tasks_per_child=1000,
 )
 
-# Database setup
-engine = create_engine(settings.database.sync_url, pool_pre_ping=True)
-SessionLocal = sessionmaker(bind=engine)
+settings = get_settings()
 
-# Redis setup
-redis_client = redis.from_url(settings.redis.url, decode_responses=True)
+# Create synchronous database engine for worker
+sync_engine = create_engine(settings.database.sync_url, echo=False)
+SessionLocal = sessionmaker(bind=sync_engine)
 
-# Initialize task classes
-data_ingestion = DataIngestionTask()
-market_scanner = MarketScannerTask()
-alert_sender = AlertSenderTask()
-
-# Signal generator
-signal_generator = SignalGenerator(min_score=settings.trading.min_signal_score)
-
-
-@app.task(bind=True, max_retries=3, default_retry_delay=60)
-def ingest_market_data(self, symbols: List[str], timeframes: List[str]):
-    """Ingest OHLCV market data for specified symbols and timeframes."""
+def get_sync_db():
+    """Get synchronous database session for worker."""
+    db = SessionLocal()
     try:
-        logger.info(f"Starting market data ingestion for {len(symbols)} symbols")
-        
-        with SessionLocal() as db:
-            result = data_ingestion.ingest_ohlcv_data(db, symbols, timeframes)
-            
-        logger.info(f"Market data ingestion completed: {result}")
-        return result
+        yield db
+    finally:
+        db.close()
+
+# Initialize components
+signal_generator = SignalGenerator(min_score=settings.trading.min_signal_score)
+data_ingestion = DataIngestionTask()
+alert_sender = AlertSenderTask()
+trending_analyzer = TrendingCoinsAnalyzer()
+
+
+@app.task
+def debug_task():
+    """Simple test task."""
+    logger.info("Hello from Celery!")
+    return "Task executed"
+
+
+@app.task
+def trigger_trading_check():
+    """Trigger trading bot to check for new opportunities after signal generation."""
+    logger.info("🎯 Triggering trading opportunity check...")
+    
+    try:
+        # This task acts as a trigger for the trading bot
+        # The actual trading logic is handled by the trading bot itself
+        logger.info("✅ Trading opportunity check triggered")
+        return {"status": "success", "message": "Trading check triggered"}
         
     except Exception as e:
-        logger.error(f"Market data ingestion failed: {e}")
-        if self.request.retries < self.max_retries:
-            logger.info(f"Retrying in {self.default_retry_delay} seconds...")
-            raise self.retry(countdown=self.default_retry_delay)
-        raise
+        logger.error(f"❌ Error triggering trading check: {e}")
+        # Send Discord alert for trading check failure
+        error_monitor.send_error_alert(
+            error=e,
+            context="Trading Opportunity Check Failure",
+            severity="ERROR",
+            additional_info={"Task": "trigger_trading_check", "Impact": "Trading bot not analyzing signals"}
+        )
+        return {"status": "error", "error": str(e)}
 
 
-@app.task(bind=True, max_retries=2, default_retry_delay=30)
-def scan_market(self, timeframes: Optional[List[str]] = None):
-    """Scan market for trading signals."""
+@app.task
+def scan_markets():
+    """Scan markets for trading signals."""
+    logger.info("Starting market scan...")
+    
     try:
-        if timeframes is None:
-            timeframes = settings.trading.timeframes
-            
-        logger.info(f"Starting market scan for timeframes: {timeframes}")
+        # Get database session
+        db = next(get_sync_db())
         
-        with SessionLocal() as db:
-            # Get active assets
-            assets = db.execute(
-                select(Asset).where(Asset.active == True).limit(settings.trading.top_coins_count)
-            ).scalars().all()
-            
-            total_signals = 0
-            
-            for asset in assets:
-                try:
-                    for timeframe in timeframes:
-                        # Get recent OHLCV data
-                        ohlcv_data = db.execute(
-                            select(OHLCV)
-                            .where(OHLCV.symbol == asset.symbol)
-                            .where(OHLCV.timeframe == timeframe)
-                            .order_by(OHLCV.timestamp.desc())
-                            .limit(500)
-                        ).scalars().all()
+        # Get active assets
+        assets = db.execute(
+            select(Asset).where(Asset.active == True)
+        ).scalars().all()
+        
+        if not assets:
+            logger.warning("No active assets found for scanning")
+            return {"status": "no_assets", "signals_generated": 0}
+        
+        signals_generated = 0
+        
+        for asset in assets:
+            try:
+                # Generate signals for each timeframe
+                timeframes_list = ["1m", "5m", "15m", "1h", "4h", "1d"]  # Default timeframes
+                for timeframe in timeframes_list:
+                    signal = generate_signal_for_asset(db, asset, timeframe)
+                    if signal:
+                        signals_generated += 1
+                        # Send alerts for new signals
+                        send_signal_alerts.delay(signal.id)
                         
-                        if len(ohlcv_data) < 200:
-                            continue
-                        
-                        # Convert to DataFrame
-                        df = pd.DataFrame([
-                            {
-                                'timestamp': candle.timestamp,
-                                'open': float(candle.open),
-                                'high': float(candle.high),
-                                'low': float(candle.low),
-                                'close': float(candle.close),
-                                'volume': float(candle.volume)
-                            }
-                            for candle in reversed(ohlcv_data)
-                        ])
-                        
-                        df.set_index('timestamp', inplace=True)
-                        
-                        # Generate signal
-                        signal_data = signal_generator.generate_signal(
-                            symbol=asset.symbol,
-                            timeframe=timeframe,
-                            df=df
-                        )
-                        
-                        if signal_data:
-                            # Validate signal
-                            if signal_generator.validate_signal(signal_data):
-                                # Save signal to database
-                                signal = Signal(
-                                    symbol=signal_data['symbol'],
-                                    timeframe=signal_data['timeframe'],
-                                    signal_type=signal_data['signal_type'],
-                                    direction=signal_data['direction'],
-                                    score=signal_data['score'],
-                                    entry_price=signal_data['entry_price'],
-                                    stop_loss=signal_data['stop_loss'],
-                                    take_profit_1=signal_data['take_profit_1'],
-                                    take_profit_2=signal_data['take_profit_2'],
-                                    take_profit_3=signal_data['take_profit_3'],
-                                    risk_reward_ratio=signal_data['risk_reward_ratio'],
-                                    confluences=signal_data['confluences'],
-                                    context=signal_data['context']
-                                )
-                                
-                                db.add(signal)
-                                db.commit()
-                                db.refresh(signal)
-                                
-                                total_signals += 1
-                                
-                                # Queue alert tasks
-                                send_telegram_alert.delay(signal.id)
-                                send_discord_alert.delay(signal.id)
-                                
-                                # Publish to Redis for real-time updates
-                                redis_client.publish('signals', json.dumps({
-                                    'id': signal.id,
-                                    'symbol': signal.symbol,
-                                    'direction': signal.direction,
-                                    'score': signal.score,
-                                    'timeframe': signal.timeframe,
-                                    'timestamp': signal.created_at.isoformat()
-                                }))
-                                
-                                logger.info(
-                                    f"Generated signal: {signal.symbol} {signal.direction} "
-                                    f"({signal.timeframe}) - Score: {signal.score}"
-                                )
-                        
-                except Exception as e:
-                    logger.error(f"Error scanning {asset.symbol}: {e}")
-                    continue
-            
-            logger.info(f"Market scan completed: {total_signals} signals generated")
-            return {"signals_generated": total_signals, "assets_scanned": len(assets)}
+            except Exception as e:
+                logger.error(f"Error scanning {asset.symbol}: {e}")
+                # Send Discord alert for individual asset scan errors
+                error_monitor.send_error_alert(
+                    error=e,
+                    context=f"Market Scan - Asset: {asset.symbol}",
+                    severity="ERROR"
+                )
+                continue
+        
+        logger.info(f"Market scan completed. Generated {signals_generated} signals")
+        return {"status": "success", "signals_generated": signals_generated}
         
     except Exception as e:
         logger.error(f"Market scan failed: {e}")
-        if self.request.retries < self.max_retries:
-            raise self.retry(countdown=self.default_retry_delay)
-        raise
+        # Send Discord alert for critical scan failure
+        error_monitor.send_error_alert(
+            error=e,
+            context="Market Scan - Complete Failure",
+            severity="CRITICAL",
+            additional_info={"Task": "scan_markets", "Impact": "No signals generated"}
+        )
+        return {"status": "error", "error": str(e)}
+    finally:
+        db.close()
 
 
-@app.task(bind=True, max_retries=3, default_retry_delay=10)
-def send_telegram_alert(self, signal_id: int):
-    """Send Telegram alert for a signal."""
+@app.task
+def ingest_market_data():
+    """Ingest fresh market data."""
+    logger.info("Starting market data ingestion...")
+    
     try:
-        with SessionLocal() as db:
-            signal = db.get(Signal, signal_id)
-            if not signal:
-                logger.warning(f"Signal {signal_id} not found")
-                return
-            
-            success = alert_sender.send_telegram_alert(signal)
-            
-            # Save alert record
+        db = next(get_sync_db())
+        result = data_ingestion.ingest_ohlcv_data(db)
+        
+        logger.info(f"Data ingestion completed: {result}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Data ingestion failed: {e}")
+        # Send Discord alert for data ingestion failure
+        error_monitor.send_error_alert(
+            error=e,
+            context="Market Data Ingestion Failure",
+            severity="CRITICAL",
+            additional_info={"Task": "ingest_market_data", "Impact": "No fresh market data available"}
+        )
+        return {"status": "error", "error": str(e)}
+    finally:
+        db.close()
+
+
+@app.task
+def send_signal_alerts(signal_id: int):
+    """Send alerts for a specific signal."""
+    logger.info(f"Sending alerts for signal {signal_id}")
+    
+    try:
+        db = next(get_sync_db())
+        
+        # Get signal
+        signal = db.execute(
+            select(Signal).where(Signal.id == signal_id)
+        ).scalar_one_or_none()
+        
+        if not signal:
+            logger.error(f"Signal {signal_id} not found")
+            return {"status": "error", "error": "Signal not found"}
+        
+        # Only send alerts for MEDIUM-HIGH confidence signals (score >= 0.75)
+        # Lowered from 0.80 to 0.75 to include more trading pairs (DOT, SOL, BTC, etc.)
+        if signal.score < 0.75:
+            logger.info(f"⏭️ Skipping alert for signal {signal_id} - Score: {signal.score:.2f} (< 75% threshold)")
+            return {"status": "skipped", "reason": "score_too_low", "score": signal.score}
+        
+        # Send Telegram alert
+        telegram_sent = alert_sender.send_telegram_alert(signal)
+        
+        # Send Discord alert
+        discord_sent = alert_sender.send_discord_alert(signal)
+        
+        # Create alert records
+        if telegram_sent:
             alert = Alert(
-                signal_id=signal_id,
+                signal_id=signal.id,
                 channel=AlertChannel.TELEGRAM,
-                success=success,
-                sent_at=datetime.utcnow() if success else None
+                sent_at=datetime.utcnow(),
+                success=True
             )
-            
             db.add(alert)
-            db.commit()
-            
-            return success
         
-    except Exception as e:
-        logger.error(f"Telegram alert failed for signal {signal_id}: {e}")
-        if self.request.retries < self.max_retries:
-            raise self.retry(countdown=self.default_retry_delay)
-        return False
-
-
-@app.task(bind=True, max_retries=3, default_retry_delay=10)
-def send_discord_alert(self, signal_id: int):
-    """Send Discord alert for a signal."""
-    try:
-        with SessionLocal() as db:
-            signal = db.get(Signal, signal_id)
-            if not signal:
-                logger.warning(f"Signal {signal_id} not found")
-                return
-            
-            success = alert_sender.send_discord_alert(signal)
-            
-            # Save alert record
+        if discord_sent:
             alert = Alert(
-                signal_id=signal_id,
+                signal_id=signal.id,
                 channel=AlertChannel.DISCORD,
-                success=success,
-                sent_at=datetime.utcnow() if success else None
+                sent_at=datetime.utcnow(),
+                success=True
             )
-            
             db.add(alert)
-            db.commit()
-            
-            return success
+        
+        db.commit()
+        
+        logger.info(f"Alerts sent for signal {signal_id}: Telegram={telegram_sent}, Discord={discord_sent}")
+        return {
+            "status": "success",
+            "telegram_sent": telegram_sent,
+            "discord_sent": discord_sent
+        }
         
     except Exception as e:
-        logger.error(f"Discord alert failed for signal {signal_id}: {e}")
-        if self.request.retries < self.max_retries:
-            raise self.retry(countdown=self.default_retry_delay)
-        return False
+        logger.error(f"Failed to send alerts for signal {signal_id}: {e}")
+        # Send Discord alert for alert sending failure
+        error_monitor.send_error_alert(
+            error=e,
+            context=f"Alert Sending Failure - Signal {signal_id}",
+            severity="ERROR",
+            additional_info={"Signal ID": signal_id, "Impact": "Users didn't receive signal alert"}
+        )
+        return {"status": "error", "error": str(e)}
+    finally:
+        db.close()
 
 
 @app.task
-def update_asset_list():
-    """Update the list of available trading assets."""
+def cleanup_old_signals():
+    """Clean up old signals and alerts."""
+    logger.info("Starting cleanup of old signals...")
+    
     try:
-        logger.info("Updating asset list...")
+        db = next(get_sync_db())
         
-        with SessionLocal() as db:
-            updated_count = data_ingestion.update_asset_list(db)
-            
-        logger.info(f"Asset list updated: {updated_count} assets")
-        return updated_count
+        # Delete signals older than 7 days
+        cutoff_date = datetime.utcnow() - timedelta(days=7)
+        
+        old_signals = db.execute(
+            select(Signal).where(Signal.created_at < cutoff_date)
+        ).scalars().all()
+        
+        deleted_count = 0
+        for signal in old_signals:
+            db.delete(signal)
+            deleted_count += 1
+        
+        db.commit()
+        
+        logger.info(f"Cleanup completed. Deleted {deleted_count} old signals")
+        return {"status": "success", "deleted_signals": deleted_count}
         
     except Exception as e:
-        logger.error(f"Asset list update failed: {e}")
-        raise
+        logger.error(f"Cleanup failed: {e}")
+        return {"status": "error", "error": str(e)}
+    finally:
+            db.close()
 
 
 @app.task
-def cleanup_old_data():
-    """Clean up old data to manage database size."""
+def analyze_trending_coins():
+    """Analyze trending coins for signals."""
+    logger.info("Starting trending coins analysis...")
+    
     try:
-        logger.info("Starting data cleanup...")
+        # Get database session
+        db = next(get_sync_db())
         
-        with SessionLocal() as db:
-            # Delete OHLCV data older than 6 months for minute timeframes
-            cutoff_date = datetime.utcnow() - timedelta(days=180)
-            
-            deleted_count = db.execute(
-                """
-                DELETE FROM ohlcv 
-                WHERE timestamp < :cutoff_date 
-                AND timeframe IN ('1m', '5m')
-                """,
-                {"cutoff_date": cutoff_date}
-            ).rowcount
-            
-            # Delete old alerts (keep for 30 days)
-            alert_cutoff = datetime.utcnow() - timedelta(days=30)
-            deleted_alerts = db.execute(
-                """
-                DELETE FROM alerts 
-                WHERE created_at < :cutoff_date
-                """,
-                {"cutoff_date": alert_cutoff}
-            ).rowcount
-            
-            db.commit()
-            
-        logger.info(f"Cleanup completed: {deleted_count} OHLCV records, {deleted_alerts} alerts deleted")
-        return {"ohlcv_deleted": deleted_count, "alerts_deleted": deleted_alerts}
+        # Run trending coins analysis
+        result = trending_analyzer.analyze_trending_coins(db)
+        
+        logger.info(f"Trending coins analysis completed: {result}")
+        return result
         
     except Exception as e:
-        logger.error(f"Data cleanup failed: {e}")
-        raise
+        logger.error(f"Trending coins analysis failed: {e}")
+        return {"status": "error", "error": str(e)}
+    finally:
+        db.close()
 
 
-# Periodic tasks
-app.conf.beat_schedule = {
-    # Market data ingestion every 1 minute
-    'ingest-market-data-1m': {
-        'task': 'worker.ingest_market_data',
-        'schedule': crontab(minute='*'),
-        'args': ([], ['1m']),
-    },
-    
-    # Market data ingestion every 5 minutes
-    'ingest-market-data-5m': {
-        'task': 'worker.ingest_market_data',
-        'schedule': crontab(minute='*/5'),
-        'args': ([], ['5m']),
-    },
-    
-    # Market data ingestion every 15 minutes
-    'ingest-market-data-15m': {
-        'task': 'worker.ingest_market_data',
-        'schedule': crontab(minute='*/15'),
-        'args': ([], ['15m']),
-    },
-    
-    # Market data ingestion every hour
-    'ingest-market-data-1h': {
-        'task': 'worker.ingest_market_data',
-        'schedule': crontab(minute=0),
-        'args': ([], ['1h']),
-    },
-    
-    # Market data ingestion every 4 hours
-    'ingest-market-data-4h': {
-        'task': 'worker.ingest_market_data',
-        'schedule': crontab(minute=0, hour='*/4'),
-        'args': ([], ['4h']),
-    },
-    
-    # Market data ingestion daily
-    'ingest-market-data-1d': {
-        'task': 'worker.ingest_market_data',
-        'schedule': crontab(minute=0, hour=0),
-        'args': ([], ['1d']),
-    },
-    
-    # Market scanning every 30 seconds (configurable)
-    'scan-market': {
-        'task': 'worker.scan_market',
-        'schedule': settings.trading.scan_interval_seconds,
-        'args': (),
-    },
-    
-    # Update asset list daily
-    'update-asset-list': {
-        'task': 'worker.update_asset_list',
-        'schedule': crontab(minute=0, hour=6),  # 6 AM UTC
-    },
-    
-    # Cleanup old data weekly
-    'cleanup-old-data': {
-        'task': 'worker.cleanup_old_data',
-        'schedule': crontab(minute=0, hour=2, day_of_week=0),  # Sunday 2 AM
-    },
-}
+def generate_signal_for_asset(db: Session, asset: Asset, timeframe: str) -> Optional[Signal]:
+    """Generate a signal for a specific asset and timeframe."""
+    try:
+        # Get recent OHLCV data
+        ohlcv_data = db.execute(
+            select(OHLCV)
+            .where(
+                and_(
+                    OHLCV.symbol == asset.symbol,
+                    OHLCV.timeframe == timeframe
+                )
+            )
+            .order_by(desc(OHLCV.timestamp))
+            .limit(500)  # Get last 500 candles
+        ).scalars().all()
+        
+        if len(ohlcv_data) < 200:
+            logger.warning(f"Insufficient data for {asset.symbol} {timeframe}: {len(ohlcv_data)} candles")
+            return None
+        
+        # Convert to DataFrame
+        import pandas as pd
+        df = pd.DataFrame([{
+            'timestamp': ohlcv.timestamp,
+            'open': float(ohlcv.open),
+            'high': float(ohlcv.high),
+            'low': float(ohlcv.low),
+            'close': float(ohlcv.close),
+            'volume': float(ohlcv.volume)
+        } for ohlcv in reversed(ohlcv_data)])
+        
+        # Generate signal
+        signal_data = signal_generator.generate_signal(
+            symbol=asset.symbol,
+            timeframe=timeframe,
+            df=df
+        )
+        
+        if not signal_data:
+            return None
+        
+        # Check if we already have a recent signal for this asset/timeframe (within the last hour)
+        recent_signal = db.execute(
+            select(Signal)
+            .where(
+                and_(
+                    Signal.symbol == asset.symbol,
+                    Signal.timeframe == timeframe,
+                    Signal.created_at > datetime.utcnow() - timedelta(hours=1)
+                )
+            )
+        ).scalar_one_or_none()
+        
+        if recent_signal:
+            logger.info(f"Recent signal already exists for {asset.symbol} {timeframe} within the last hour")
+            return None
+        
+        # Create signal record
+        signal = Signal(
+            symbol=asset.symbol,
+            timeframe=timeframe,
+            signal_type=SignalType.ENTRY,
+            direction=SignalDirection(signal_data['direction']),
+            score=signal_data['score'],
+            entry_price=signal_data.get('entry_price'),
+            stop_loss=signal_data.get('stop_loss'),
+            take_profit_1=signal_data.get('take_profit_1'),
+            take_profit_2=signal_data.get('take_profit_2'),
+            take_profit_3=signal_data.get('take_profit_3'),
+            risk_reward_ratio=signal_data.get('risk_reward_ratio'),
+            confluences=signal_data.get('confluences', {}),
+            context=signal_data.get('context', {})
+        )
+        
+        db.add(signal)
+        db.commit()
+        db.refresh(signal)
+        
+        logger.info(f"Generated signal for {asset.symbol} {timeframe}: {signal.direction} (score: {signal.score:.2f})")
+        return signal
+        
+    except Exception as e:
+        logger.error(f"Error generating signal for {asset.symbol} {timeframe}: {e}")
+        return None
 
 
 if __name__ == '__main__':
     app.start()
-
-
-
-

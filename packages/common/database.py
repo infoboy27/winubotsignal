@@ -17,6 +17,12 @@ from .schemas import AlertChannel, SignalDirection, SignalType, TimeFrame
 
 Base = declarative_base()
 
+# Database session dependency
+def get_db():
+    """Get database session - placeholder function."""
+    # This is a placeholder - actual implementation would be in the main app
+    pass
+
 
 class TimestampMixin:
     """Mixin for created_at and updated_at timestamps."""
@@ -221,6 +227,33 @@ class User(Base, TimestampMixin):
     # API access
     api_key = Column(UUID(as_uuid=True), default=uuid.uuid4, unique=True)
     api_key_created_at = Column(DateTime, default=func.now())
+    
+    # Subscription fields
+    subscription_status = Column(String(50), default="inactive", nullable=False)  # active, past_due, canceled, inactive
+    subscription_tier = Column(String(20), default="free", nullable=False)  # free, professional, vip_elite
+    current_period_end = Column(DateTime)
+    plan_id = Column(String(100))  # Stripe plan ID
+    stripe_customer_id = Column(String(255), unique=True, index=True)
+    stripe_subscription_id = Column(String(255), unique=True, index=True)
+    telegram_user_id = Column(String(100))  # Telegram user ID for group access
+    subscription_created_at = Column(DateTime)
+    subscription_updated_at = Column(DateTime)
+    email_verified = Column(Boolean, default=False, nullable=False)
+    
+    # New subscription system fields
+    trial_start_date = Column(DateTime)
+    trial_used = Column(Boolean, default=False, nullable=False)
+    trial_dashboard_access_count = Column(Integer, default=0, nullable=False)
+    binance_pay_merchant_id = Column(String(50), default="287402909")
+    payment_due_date = Column(DateTime)
+    access_revoked_at = Column(DateTime)
+    subscription_renewal_date = Column(DateTime)
+    last_payment_date = Column(DateTime)
+    payment_method = Column(String(50), default="binance_pay")  # binance_pay, stripe, etc.
+    
+    # Relationships
+    email_verifications = relationship("EmailVerification", back_populates="user")
+    subscription_events = relationship("SubscriptionEvent", back_populates="user")
 
 
 class MarketData(Base):
@@ -247,6 +280,92 @@ class SystemMetrics(Base):
     
     # Common metrics: api_response_time, signal_generation_time, 
     # alert_send_success_rate, database_query_time, etc.
+
+
+class EmailVerification(Base, TimestampMixin):
+    """Email verification model."""
+    __tablename__ = "email_verifications"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    email = Column(String(255), nullable=False)
+    code = Column(String(10), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    is_used = Column(Boolean, default=False, nullable=False)
+    verified_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    user = relationship("User", back_populates="email_verifications")
+
+
+class SubscriptionEvent(Base, TimestampMixin):
+    """Subscription events for auditing and support."""
+    __tablename__ = "subscription_events"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    event_type = Column(String(100), nullable=False)  # subscription.created, subscription.updated, etc.
+    stripe_event_id = Column(String(255), unique=True, index=True)
+    event_data = Column(JSON, nullable=False, default=dict)
+    processed = Column(Boolean, default=False, nullable=False)
+    
+    # Relationships
+    user = relationship("User")
+
+
+class SubscriptionPlan(Base, TimestampMixin):
+    """Subscription plans configuration."""
+    __tablename__ = "subscription_plans"
+    
+    id = Column(String(50), primary_key=True)  # free_trial, professional, vip_elite
+    name = Column(String(100), nullable=False)
+    price_usd = Column(Numeric(10, 2), nullable=False)
+    price_usdt = Column(Numeric(10, 2), nullable=False)
+    interval = Column(String(20), nullable=False)  # monthly, yearly, trial
+    duration_days = Column(Integer)  # NULL for unlimited
+    dashboard_access_limit = Column(Integer)  # -1 for unlimited, 1 for trial
+    features = Column(JSON, nullable=False, default=list)
+    telegram_access = Column(Boolean, default=False, nullable=False)
+    support_level = Column(String(20), default="none", nullable=False)  # none, priority, 24/7
+    binance_pay_id = Column(String(50))  # Binance Pay merchant ID
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class PaymentTransaction(Base, TimestampMixin):
+    """Payment transactions tracking."""
+    __tablename__ = "payment_transactions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    plan_id = Column(String(50), ForeignKey("subscription_plans.id"), nullable=False)
+    amount_usd = Column(Numeric(10, 2), nullable=False)
+    amount_usdt = Column(Numeric(10, 2), nullable=False)
+    payment_method = Column(String(50), nullable=False)  # binance_pay, stripe, etc.
+    transaction_id = Column(String(255), unique=True, index=True)  # External transaction ID
+    status = Column(String(20), nullable=False)  # pending, completed, failed, refunded
+    payment_data = Column(JSON)  # Store payment provider specific data
+    completed_at = Column(DateTime)
+    
+    # Relationships
+    user = relationship("User")
+    plan = relationship("SubscriptionPlan")
+
+
+class TelegramGroupAccess(Base, TimestampMixin):
+    """Telegram group access management."""
+    __tablename__ = "telegram_group_access"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    telegram_user_id = Column(String(100), index=True)
+    telegram_username = Column(String(100))
+    group_name = Column(String(100), nullable=False)  # professional_group, vip_group
+    access_granted_at = Column(DateTime, default=func.now())
+    access_revoked_at = Column(DateTime)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    
+    # Relationships
+    user = relationship("User")
 
 
 

@@ -94,22 +94,33 @@ class SignalGenerator:
                 risk_percent=1.0
             )
             
-            # Create confluences summary
+            # Create confluences summary (convert numpy bool_ to Python bool)
             confluences = {
-                "trend": trend_analysis["score"] > 0.6,
-                "smooth_trail": smooth_trail_analysis.get("support", False) if direction == "LONG" 
-                              else smooth_trail_analysis.get("resistance", False),
-                "liquidity": liquidity_analysis["validation"],
-                "smart_money": smart_money_analysis["signal_detected"],
-                "volume": liquidity_analysis["volume_confirmation"]
+                "trend": bool(trend_analysis["score"] > 0.6),
+                "smooth_trail": bool(smooth_trail_analysis.get("support", False) if direction == "LONG" 
+                              else smooth_trail_analysis.get("resistance", False)),
+                "liquidity": bool(liquidity_analysis["validation"]),
+                "smart_money": bool(smart_money_analysis["signal_detected"]),
+                "volume": bool(liquidity_analysis["volume_confirmation"])
             }
             
-            # Create signal context
+            # Create signal context (ensure JSON serializable)
+            def make_serializable(obj):
+                """Convert numpy types to Python types for JSON serialization."""
+                if hasattr(obj, 'item'):  # numpy scalar
+                    return obj.item()
+                elif isinstance(obj, dict):
+                    return {k: make_serializable(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [make_serializable(v) for v in obj]
+                else:
+                    return obj
+            
             context = {
-                "trend_analysis": trend_analysis,
-                "smooth_trail_analysis": smooth_trail_analysis,
-                "liquidity_analysis": liquidity_analysis,
-                "smart_money_analysis": smart_money_analysis,
+                "trend_analysis": make_serializable(trend_analysis),
+                "smooth_trail_analysis": make_serializable(smooth_trail_analysis),
+                "liquidity_analysis": make_serializable(liquidity_analysis),
+                "smart_money_analysis": make_serializable(smart_money_analysis),
                 "timeframe": timeframe,
                 "candles_analyzed": len(df)
             }
@@ -120,13 +131,13 @@ class SignalGenerator:
                 "timeframe": timeframe,
                 "signal_type": "ENTRY",
                 "direction": direction,
-                "score": round(confidence_score, 3),
+                "score": float(round(confidence_score, 3)),
                 "entry_price": entry_levels['entry'],
                 "stop_loss": risk_params['stop_loss'],
                 "take_profit_1": risk_params['take_profit_1'],
                 "take_profit_2": risk_params['take_profit_2'],
                 "take_profit_3": risk_params['take_profit_3'],
-                "risk_reward_ratio": risk_params['risk_reward_ratio'],
+                "risk_reward_ratio": float(risk_params['risk_reward_ratio']) if risk_params['risk_reward_ratio'] is not None else None,
                 "confluences": confluences,
                 "context": context,
                 "created_at": datetime.utcnow(),

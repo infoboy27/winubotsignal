@@ -1,0 +1,14 @@
+http:
+  routers:
+    web-local:
+      rule: "Host(`winu.app`) || Host(`dashboard.winu.app`) || Host(`www.winu.app`)"
+      service: web-local-service
+      entryPoints:
+        - websecure
+        - web
+  
+  services:
+    web-local-service:
+      loadBalancer:
+        servers:
+          - url: http://172.18.0.1:3000

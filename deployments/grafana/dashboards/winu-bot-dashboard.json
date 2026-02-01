@@ -1,0 +1,238 @@
+{
+  "id": null,
+  "title": "Winu Bot Signal - System Monitor",
+  "tags": ["winu", "bot", "trading", "signals"],
+  "style": "dark",
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "title": "System Health Overview",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "winu_api_health",
+          "legendFormat": "API Health"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": 0},
+              {"color": "green", "value": 1}
+            ]
+          },
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "Unhealthy"}, "1": {"text": "Healthy"}}}
+          ]
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+    },
+    {
+      "id": 2,
+      "title": "Total Data Candles",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "winu_total_candles",
+          "legendFormat": "Total Candles"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "unit": "short"
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+    },
+    {
+      "id": 3,
+      "title": "Active Assets",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "winu_active_assets",
+          "legendFormat": "Active Assets"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "unit": "short"
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}
+    },
+    {
+      "id": 4,
+      "title": "Recent Signals",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "winu_recent_signals",
+          "legendFormat": "Recent Signals"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "unit": "short"
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}
+    },
+    {
+      "id": 5,
+      "title": "Data Freshness",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "winu_data_freshness_hours",
+          "legendFormat": "Hours Since Last Update"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 24}
+            ]
+          },
+          "unit": "h"
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 8}
+    },
+    {
+      "id": 6,
+      "title": "Signals Today",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "winu_signals_today",
+          "legendFormat": "Signals Today"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "unit": "short"
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 8}
+    },
+    {
+      "id": 7,
+      "title": "Worker Status",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "winu_worker_errors",
+          "legendFormat": "Errors"
+        },
+        {
+          "expr": "winu_worker_warnings",
+          "legendFormat": "Warnings"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": 0},
+              {"color": "red", "value": 1}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8}
+    },
+    {
+      "id": 8,
+      "title": "API Response Time",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(winu_api_response_time_seconds_sum[5m]) / rate(winu_api_response_time_seconds_count[5m])",
+          "legendFormat": "{{endpoint}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "unit": "s"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+    },
+    {
+      "id": 9,
+      "title": "Data Ingestion Requests",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(winu_data_ingestion_requests_total[5m])",
+          "legendFormat": "Data Ingestion Rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "unit": "reqps"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+    },
+    {
+      "id": 10,
+      "title": "System Metrics Over Time",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "winu_total_candles",
+          "legendFormat": "Total Candles"
+        },
+        {
+          "expr": "winu_active_assets",
+          "legendFormat": "Active Assets"
+        },
+        {
+          "expr": "winu_recent_signals",
+          "legendFormat": "Recent Signals"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24}
+    }
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "schemaVersion": 27,
+  "version": 1
+}
+
+
+
+
+

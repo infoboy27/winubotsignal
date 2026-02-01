@@ -1,0 +1,348 @@
+version: '3.8'
+
+services:
+  # Database
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: winu-bot-signal-postgres
+    env_file:
+      - production.env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-winudb}
+      POSTGRES_USER: ${POSTGRES_USER:-winu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-winu250420}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deployments/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-winu}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: winu-bot-signal-redis
+    env_file:
+      - production.env
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  # Traefik (Reverse Proxy)
+  traefik:
+    image: traefik:latest
+    container_name: winu-bot-signal-traefik
+    env_file:
+      - production.env
+    command:
+      - "--api.dashboard=true"
+      - "--api.debug=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedByDefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.cloudflare.acme.tlschallenge=true"
+      - "--certificatesresolvers.cloudflare.acme.email=${CLOUDFLARE_EMAIL}"
+      - "--certificatesresolvers.cloudflare.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.cloudflare.acme.dnschallenge.provider=cloudflare"
+      - "--certificatesresolvers.cloudflare.acme.dnschallenge.resolvers=1.1.1.1:53,1.0.0.1:53"
+      - "--global.checkNewVersion=false"
+      - "--global.sendAnonymousUsage=false"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_data:/letsencrypt
+    environment:
+      - CLOUDFLARE_EMAIL=${CLOUDFLARE_EMAIL}
+      - CLOUDFLARE_DNS_API_TOKEN=${CLOUDFLARE_DNS_API_TOKEN}
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  # API Service
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: winu-bot-signal-api
+    env_file:
+      - production.env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-winu}:${POSTGRES_PASSWORD:-winu250420}@postgres:5432/${POSTGRES_DB:-winudb}
+      - REDIS_URL=redis://redis:6379
+      - TZ=America/New_York
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.${DOMAIN:-winu.app}`)"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls.certresolver=cloudflare"
+      - "traefik.http.routers.api.service=api@docker"
+      - "traefik.http.routers.api-ws.rule=Host(`api.${DOMAIN:-winu.app}`) && PathPrefix(`/ws`)"
+      - "traefik.http.routers.api-ws.entrypoints=websecure"
+      - "traefik.http.routers.api-ws.tls.certresolver=cloudflare"
+      - "traefik.http.routers.api-ws.service=api@docker"
+      - "traefik.http.routers.api-ws.middlewares=api-ws-headers"
+      - "traefik.http.middlewares.api-ws-headers.headers.customrequestheaders.Connection=Upgrade"
+      - "traefik.http.middlewares.api-ws-headers.headers.customrequestheaders.Upgrade=websocket"
+      - "traefik.http.services.api.loadbalancer.server.port=8001"
+
+  # Web Dashboard
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://api.${DOMAIN:-winu.app}
+    container_name: winu-bot-signal-web
+    env_file:
+      - production.env
+    environment:
+      - NEXTAUTH_URL=https://dashboard.${DOMAIN:-winu.app}
+      - NEXT_PUBLIC_API_URL=https://api.${DOMAIN:-winu.app}
+      - API_URL_INTERNAL=http://api:8001
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NODE_ENV=${NODE_ENV:-production}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+    labels:
+      - "traefik.enable=true"
+      # Dashboard subdomain routing
+      - "traefik.http.routers.dashboard.rule=Host(`dashboard.${DOMAIN:-winu.app}`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls.certresolver=cloudflare"
+      - "traefik.http.routers.dashboard.service=web@docker"
+      # Main domain routing (landing page)
+      - "traefik.http.routers.landing.rule=Host(`${DOMAIN:-winu.app}`)"
+      - "traefik.http.routers.landing.entrypoints=websecure"
+      - "traefik.http.routers.landing.tls.certresolver=cloudflare"
+      - "traefik.http.routers.landing.service=web@docker"
+      # Service configuration
+      - "traefik.http.services.web.loadbalancer.server.port=3000"
+
+  # Celery Worker
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: winu-bot-signal-worker
+    working_dir: /app
+    env_file:
+      - production.env
+    environment:
+      - TZ=America/New_York
+    command: ["celery", "-A", "worker:app", "worker", "--loglevel=info", "--concurrency=2"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./apps/worker:/app
+      - ./packages:/packages
+      - /etc/localtime:/etc/localtime:ro
+      - /usr/share/zoneinfo/America/New_York:/etc/timezone:ro
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  # Celery Beat (Scheduler)
+  celery-beat:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: winu-bot-signal-celery-beat
+    working_dir: /app
+    env_file:
+      - production.env
+    environment:
+      - TZ=America/New_York
+    command: ["celery", "-A", "worker:app", "beat", "--loglevel=info"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./apps/worker:/app
+      - ./packages:/packages
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  # Metrics Exporter
+  metrics-exporter:
+    build:
+      context: .
+      dockerfile: apps/monitoring/Dockerfile
+    container_name: winu-bot-signal-metrics-exporter
+    env_file:
+      - production.env
+    environment:
+      - API_BASE_URL=https://api.${DOMAIN:-winu.app}
+    command: ["python3", "metrics_exporter.py", "--port", "8002", "--interval", "30"]
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  # Prometheus (Metrics Collection)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: winu-bot-signal-prometheus
+    env_file:
+      - production.env
+    volumes:
+      - ./deployments/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./deployments/prometheus/alert-rules:/etc/prometheus/alert-rules
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+      - '--web.listen-address=:9090'
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN:-winu.app}`)"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls.certresolver=cloudflare"
+      - "traefik.http.routers.prometheus.service=prometheus@docker"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+
+  # Grafana (Dashboards)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: winu-bot-signal-grafana
+    env_file:
+      - production.env
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deployments/grafana/provisioning:/etc/grafana/provisioning
+      - ./deployments/grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN:-winu.app}`) || Host(`monitor.${DOMAIN:-winu.app}`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls.certresolver=cloudflare"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  # AlertManager
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: winu-bot-signal-alertmanager
+    env_file:
+      - production.env
+    volumes:
+      - ./deployments/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  # Monitoring Exporters
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: winu-bot-signal-postgres-exporter
+    env_file:
+      - production.env
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER:-winu}:${POSTGRES_PASSWORD:-winu250420}@postgres:5432/${POSTGRES_DB:-winudb}?sslmode=disable
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: winu-bot-signal-redis-exporter
+    env_file:
+      - production.env
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: winu-bot-signal-node-exporter
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  traefik_data:
+  alertmanager_data:
+
+networks:
+  winu-bot-signal-network:
+    external: false

@@ -3,6 +3,7 @@
 import json
 import sys
 from typing import Optional
+from datetime import datetime
 import requests
 from loguru import logger
 
@@ -24,7 +25,7 @@ class AlertSenderTask:
         self.discord_webhook = settings.messaging.discord_webhook_url
     
     def send_telegram_alert(self, signal: Signal) -> bool:
-        """Send alert via Telegram."""
+        """Send SIGNAL alert via Telegram (signals only, no errors)."""
         if not self.telegram_token or not self.telegram_chat_id:
             logger.warning("Telegram credentials not configured")
             return False
@@ -68,38 +69,30 @@ class AlertSenderTask:
             return False
     
     def send_discord_alert(self, signal: Signal) -> bool:
-        """Send alert via Discord webhook."""
+        """Send SIGNAL alert via Discord webhook (DISABLED - Discord only receives error alerts)."""
+        logger.info(f"🚫 Discord signal alert disabled for signal {signal.id} - Discord only receives error alerts")
+        return False
+    
+    def send_error_alert_telegram(self, error_message: str, error_type: str = "ERROR") -> bool:
+        """Send error alert via Telegram (disabled - Telegram only gets signals)."""
+        logger.info(f"🚫 Telegram error alert skipped - Telegram only receives signals")
+        return False
+    
+    def send_error_alert_discord(self, error_message: str, error_type: str = "ERROR") -> bool:
+        """Send error alert via Discord webhook."""
         if not self.discord_webhook:
             logger.warning("Discord webhook not configured")
             return False
         
         try:
-            # Create message
-            signal_dict = {
-                'symbol': signal.symbol,
-                'direction': signal.direction,
-                'timeframe': signal.timeframe,
-                'score': signal.score,
-                'entry_price': str(signal.entry_price) if signal.entry_price else 'Market',
-                'stop_loss': str(signal.stop_loss) if signal.stop_loss else 'N/A',
-                'take_profit_1': str(signal.take_profit_1) if signal.take_profit_1 else 'N/A',
-                'take_profit_2': str(signal.take_profit_2) if signal.take_profit_2 else 'N/A',
-                'take_profit_3': str(signal.take_profit_3) if signal.take_profit_3 else 'N/A',
-                'risk_reward_ratio': signal.risk_reward_ratio or 'N/A',
-                'confluences': signal.confluences or {},
-                'created_at': signal.created_at.isoformat()
-            }
-            
-            message = create_alert_message(signal_dict)
-            
-            # Create Discord embed
+            # Create Discord embed for error
             embed = {
-                "title": f"🚨 New Trading Signal - {signal.symbol}",
-                "description": message,
-                "color": 0x00ff00 if signal.direction == 'LONG' else 0xff0000,
-                "timestamp": signal.created_at.isoformat(),
+                "title": f"🚨 {error_type}",
+                "description": error_message,
+                "color": 0xff0000,  # Red color for errors
+                "timestamp": datetime.utcnow().isoformat(),
                 "footer": {
-                    "text": "Million Trader - Not financial advice"
+                    "text": "Winu Bot Error Monitor"
                 }
             }
             
@@ -110,11 +103,11 @@ class AlertSenderTask:
             response = requests.post(self.discord_webhook, json=payload, timeout=10)
             response.raise_for_status()
             
-            logger.info(f"Discord alert sent for signal {signal.id}")
+            logger.info(f"Discord error alert sent successfully")
             return True
             
         except Exception as e:
-            logger.error(f"Failed to send Discord alert for signal {signal.id}: {e}")
+            logger.error(f"Failed to send Discord error alert: {e}")
             return False
 
 

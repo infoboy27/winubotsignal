@@ -38,6 +38,10 @@ export default function SignalsList() {
 
   const fetchSignals = async () => {
     try {
+      // Temporarily disable API calls to prevent 401 errors
+      setLoading(false);
+      return;
+      
       const response = await fetch('/api/signals/recent?limit=20')
       if (response.ok) {
         const data = await response.json()
@@ -118,19 +122,19 @@ export default function SignalsList() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
                   <div>
                     <span className="text-gray-500">Entry:</span>
-                    <span className="ml-1 font-medium">${parseFloat(signal.entry_price).toFixed(4)}</span>
+                    <span className="ml-1 font-medium">${parseFloat(signal.entry_price || '0').toFixed(4)}</span>
                   </div>
                   <div>
                     <span className="text-gray-500">Stop Loss:</span>
-                    <span className="ml-1 font-medium">${parseFloat(signal.stop_loss).toFixed(4)}</span>
+                    <span className="ml-1 font-medium">${parseFloat(signal.stop_loss || '0').toFixed(4)}</span>
                   </div>
                   <div>
                     <span className="text-gray-500">Take Profit:</span>
-                    <span className="ml-1 font-medium">${parseFloat(signal.take_profit_1).toFixed(4)}</span>
+                    <span className="ml-1 font-medium">${parseFloat(signal.take_profit_1 || '0').toFixed(4)}</span>
                   </div>
                   <div>
                     <span className="text-gray-500">R:R:</span>
-                    <span className="ml-1 font-medium">{signal.risk_reward_ratio.toFixed(1)}</span>
+                    <span className="ml-1 font-medium">{(signal.risk_reward_ratio || 0).toFixed(1)}</span>
                   </div>
                 </div>
 
@@ -162,7 +166,7 @@ export default function SignalsList() {
             {/* Score and Time */}
             <div className="text-right">
               <div className={`text-2xl font-bold ${getScoreColor(signal.score)}`}>
-                {(signal.score * 100).toFixed(0)}%
+                {((signal.score || 0) * 100).toFixed(0)}%
               </div>
               <div className="flex items-center text-sm text-gray-500 mt-1">
                 <Clock className="h-4 w-4 mr-1" />

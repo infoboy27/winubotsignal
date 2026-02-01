@@ -40,9 +40,15 @@ class TrendAnalyzer:
         
         # Calculate ADX for trend strength
         adx_data = ta.adx(df['high'], df['low'], df['close'], length=14)
-        df['adx'] = adx_data['ADX_14']
-        df['di_plus'] = adx_data['DMP_14']
-        df['di_minus'] = adx_data['DMN_14']
+        if isinstance(adx_data, pd.DataFrame):
+            df['adx'] = adx_data['ADX_14']
+            df['di_plus'] = adx_data['DMP_14']
+            df['di_minus'] = adx_data['DMN_14']
+        else:
+            # Handle case where ADX returns a Series
+            df['adx'] = adx_data
+            df['di_plus'] = 0  # Default values if not available
+            df['di_minus'] = 0
         
         # Calculate momentum indicators
         df['rsi'] = ta.rsi(df['close'], length=14)

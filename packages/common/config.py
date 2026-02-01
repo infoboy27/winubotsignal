@@ -9,11 +9,11 @@ from pydantic_settings import BaseSettings
 
 class DatabaseSettings(BaseSettings):
     """Database configuration."""
-    host: str = Field(default="postgres", env="POSTGRES_HOST")
+    host: str = Field(default="winu-bot-signal-postgres", env="POSTGRES_HOST")
     port: int = Field(default=5432, env="POSTGRES_PORT")
-    database: str = Field(default="million", env="POSTGRES_DB")
-    username: str = Field(default="million", env="POSTGRES_USER")
-    password: str = Field(default="changeme", env="POSTGRES_PASSWORD")
+    database: str = Field(default="winudb", env="POSTGRES_DB")
+    username: str = Field(default="winu", env="POSTGRES_USER")
+    password: str = Field(default="winu250420", env="POSTGRES_PASSWORD")
     
     @property
     def url(self) -> str:
@@ -28,7 +28,7 @@ class DatabaseSettings(BaseSettings):
 
 class RedisSettings(BaseSettings):
     """Redis configuration."""
-    url: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
+    url: str = Field(default="redis://winu-bot-signal-redis:6379/0", env="REDIS_URL")
     
     @property
     def broker_url(self) -> str:
@@ -83,6 +83,22 @@ class MessagingSettings(BaseSettings):
         return v
 
 
+class EmailSettings(BaseSettings):
+    """Email configuration."""
+    sender_email: str = Field(default="noreply@winu.app", env="EMAIL_SENDER")
+    sender_password: str = Field(default="", env="EMAIL_PASSWORD")
+    smtp_server: str = Field(default="smtp.gmail.com", env="EMAIL_SMTP_SERVER")
+    smtp_port: int = Field(default=587, env="EMAIL_SMTP_PORT")
+    sendgrid_api_key: Optional[str] = Field(default=None, env="SENDGRID_API_KEY")
+
+
+class StripeSettings(BaseSettings):
+    """Stripe payment configuration."""
+    secret_key: Optional[str] = Field(default=None, env="STRIPE_SECRET_KEY")
+    publishable_key: Optional[str] = Field(default=None, env="STRIPE_PUBLISHABLE_KEY")
+    webhook_secret: Optional[str] = Field(default=None, env="STRIPE_WEBHOOK_SECRET")
+
+
 class APISettings(BaseSettings):
     """API server configuration."""
     host: str = Field(default="0.0.0.0", env="API_HOST")
@@ -106,24 +122,26 @@ class TradingSettings(BaseSettings):
     scan_interval_seconds: int = Field(default=30, env="SCAN_INTERVAL_SECONDS")
     min_signal_score: float = Field(default=0.65, env="MIN_SIGNAL_SCORE")
     min_volume_usd: float = Field(default=100000, env="MIN_VOLUME_USD")
-    timeframes: List[str] = Field(
-        default=["1m", "5m", "15m", "1h", "4h", "1d"], 
-        env="TIMEFRAMES"
-    )
+    # timeframes: str = Field(
+    #     default="1m,5m,15m,1h,4h,1d"
+    # )
     top_coins_count: int = Field(default=200, env="TOP_COINS_COUNT")
     
-    @validator('timeframes', pre=True)
-    def validate_timeframes(cls, v):
-        if isinstance(v, str):
-            # Handle both comma-separated and space-separated values
-            if ',' in v:
-                return [tf.strip() for tf in v.split(',') if tf.strip()]
-            else:
-                return [tf.strip() for tf in v.split() if tf.strip()]
-        elif isinstance(v, list):
-            return v
-        else:
-            return ["1m", "5m", "15m", "1h", "4h", "1d"]  # Default fallback
+    # Enhanced analysis settings
+    analysis_mode: str = Field(default="moderate", env="ANALYSIS_MODE")
+    min_confidence_score: float = Field(default=0.65, env="MIN_CONFIDENCE_SCORE")
+    min_confluence_score: float = Field(default=0.70, env="MIN_CONFLUENCE_SCORE")
+    min_risk_reward_ratio: float = Field(default=2.0, env="MIN_RISK_REWARD_RATIO")
+    max_position_size: float = Field(default=0.02, env="MAX_POSITION_SIZE")
+    max_volatility: float = Field(default=0.08, env="MAX_VOLATILITY")
+    primary_exchange: str = Field(default="binance", env="PRIMARY_EXCHANGE")
+    secondary_exchange: str = Field(default="gate", env="SECONDARY_EXCHANGE")
+    market_data_source: str = Field(default="coinmarketcap", env="MARKET_DATA_SOURCE")
+    
+    # Trending coins settings
+    trending_coins_count: int = Field(default=10, env="TRENDING_COINS_COUNT")
+    include_syrup_usdt: bool = Field(default=True, env="INCLUDE_SYRUP_USDT")
+    
     
     @validator('default_risk_percent', 'max_daily_loss_percent')
     def validate_percentages(cls, v):
@@ -164,6 +182,8 @@ class Settings(BaseSettings):
     exchange: ExchangeSettings = ExchangeSettings()
     market_data: MarketDataSettings = MarketDataSettings()
     messaging: MessagingSettings = MessagingSettings()
+    email: EmailSettings = EmailSettings()
+    stripe: StripeSettings = StripeSettings()
     api: APISettings = APISettings()
     trading: TradingSettings = TradingSettings()
     backtest: BacktestSettings = BacktestSettings()

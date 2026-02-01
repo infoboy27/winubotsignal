@@ -4,52 +4,83 @@ services:
   postgres:
     image: timescale/timescaledb:latest-pg15
     container_name: winu-bot-signal-postgres
+    env_file:
+      - production.env
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-million_trader}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-winudb}
+      POSTGRES_USER: ${POSTGRES_USER:-winu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-winu250420}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./deployments/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-million}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-winu}"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
 
   redis:
     image: redis:7-alpine
     container_name: winu-bot-signal-redis
+    env_file:
+      - production.env
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  traefik:
+    image: traefik:v2.10
+    container_name: winu-bot-signal-traefik
+    env_file:
+      - production.env
+    command:
+      - "--api.dashboard=true"
+      - "--api.debug=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedByDefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.caserver=https://acme-v02.api.letsencrypt.org/directory"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt_data:/letsencrypt
+      - ./deployments/traefik/dynamic:/etc/traefik/dynamic
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
 
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
     container_name: winu-bot-signal-api
+    env_file:
+      - production.env
     environment:
-      - POSTGRES_HOST=postgres
-      - REDIS_URL=redis://redis:6379/0
-      - JWT_SECRET=this-is-a-very-long-and-secure-jwt-secret-key-for-production-use-only
-      - MAX_POSITIONS=10
-      - SCAN_INTERVAL_SECONDS=30
-      - MIN_SIGNAL_SCORE=0.65
-      - MIN_VOLUME_USD=100000
-      - TOP_COINS_COUNT=200
+      - TZ=America/New_York
     ports:
-      - "${API_PORT:-8005}:8005"
+      - "8001:8001"
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,31 +91,30 @@ services:
       - ./packages:/packages
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - winu-bot-signal-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.winu.app`)"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls=true"
+      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.api.middlewares=cors@file"
+      - "traefik.http.services.api.loadbalancer.server.port=8001"
 
   worker:
     build:
       context: .
       dockerfile: apps/worker/Dockerfile
     container_name: winu-bot-signal-worker
+    env_file:
+      - production.env
     environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=million
-      - POSTGRES_USER=million
-      - POSTGRES_PASSWORD=changeme
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/1
-      - JWT_SECRET=this-is-a-very-long-and-secure-jwt-secret-key-for-production-use-only
-      - MAX_POSITIONS=10
-      - SCAN_INTERVAL_SECONDS=30
-      - MIN_SIGNAL_SCORE=0.65
-      - MIN_VOLUME_USD=100000
-      - TOP_COINS_COUNT=200
+      - TZ=America/New_York
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,19 +125,25 @@ services:
     volumes:
       - ./apps/worker:/app
       - ./packages:/packages
+      - /etc/localtime:/etc/localtime:ro
+      - /usr/share/zoneinfo/America/New_York:/etc/timezone:ro
     restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
 
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
     container_name: winu-bot-signal-web
+    env_file:
+      - production.env
     environment:
-      - NEXTAUTH_URL=http://localhost:3003
+      - NEXTAUTH_URL=https://winu.app
       - NEXT_PUBLIC_API_URL=https://api.winu.app
-      - API_URL_INTERNAL=http://api:8005
+      - API_URL_INTERNAL=http://api:8001
     ports:
-      - "3003:3000"
+      - "3005:3000"
     depends_on:
       - api
     volumes:
@@ -115,6 +151,19 @@ services:
       - /app/node_modules
       - /app/.next
     restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=Host(`winu.app`) || Host(`dashboard.winu.app`)"
+      - "traefik.http.routers.web.entrypoints=websecure"
+      - "traefik.http.routers.web.tls=true"
+      - "traefik.http.routers.web.tls.certresolver=letsencrypt"
+      - "traefik.http.services.web.loadbalancer.server.port=3000"
+      - "traefik.http.routers.web-redirect.rule=Host(`winu.app`) || Host(`dashboard.winu.app`)"
+      - "traefik.http.routers.web-redirect.entrypoints=web"
+      - "traefik.http.routers.web-redirect.middlewares=web-redirect"
+      - "traefik.http.middlewares.web-redirect.redirectscheme.scheme=https"
 
   prometheus:
     image: prom/prometheus:latest
@@ -131,6 +180,8 @@ services:
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-lifecycle'
     restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
 
   grafana:
     image: grafana/grafana:latest
@@ -147,6 +198,14 @@ services:
     depends_on:
       - prometheus
     restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`monitor.winu.app`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
 
   celery-beat:
     build:
@@ -154,21 +213,10 @@ services:
       dockerfile: apps/worker/Dockerfile
     container_name: winu-bot-signal-celery-beat
     command: celery -A worker beat --loglevel=info
+    env_file:
+      - production.env
     environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=million
-      - POSTGRES_USER=million
-      - POSTGRES_PASSWORD=changeme
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/1
-      - JWT_SECRET=this-is-a-very-long-and-secure-jwt-secret-key-for-production-use-only
-      - MAX_POSITIONS=10
-      - SCAN_INTERVAL_SECONDS=30
-      - MIN_SIGNAL_SCORE=0.65
-      - MIN_VOLUME_USD=100000
-      - TOP_COINS_COUNT=200
+      - TZ=America/New_York
     depends_on:
       postgres:
         condition: service_healthy
@@ -177,16 +225,107 @@ services:
     volumes:
       - ./apps/worker:/app
       - ./packages:/packages
+      - /etc/localtime:/etc/localtime:ro
+      - /usr/share/zoneinfo/America/New_York:/etc/timezone:ro
     restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+
+  # Automated Trading Bot
+  trading-bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: winu-bot-signal-trading-bot
+    command: python core/trading_bot.py
+    env_file:
+      - production.env
+    environment:
+      - BOT_TEST_MODE=false
+      - BOT_AUTO_START=false
+      - PYTHONPATH=/app:/packages
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    volumes:
+      - ./bot:/app
+      - ./packages:/packages
+      - bot_logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+    ports:
+      - "8003:8003"
+
+  # Trading Bot API Server
+  trading-bot-api:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: winu-bot-signal-trading-bot-api
+    command: python api_server.py
+    env_file:
+      - production.env
+    environment:
+      - PYTHONPATH=/app:/packages
+    depends_on:
+      postgres:
+        condition: service_healthy
+      trading-bot:
+        condition: service_started
+    volumes:
+      - ./bot:/app
+      - ./packages:/packages
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+    ports:
+      - "8000:8000"
+
+  # Bot Dashboard
+  bot-dashboard:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: winu-bot-signal-bot-dashboard
+    command: python dashboard/app.py
+    env_file:
+      - production.env
+    environment:
+      - PYTHONPATH=/app:/packages
+    depends_on:
+      postgres:
+        condition: service_healthy
+      trading-bot:
+        condition: service_started
+    volumes:
+      - ./bot:/app
+      - ./packages:/packages
+    restart: unless-stopped
+    networks:
+      - winu-bot-signal-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bot-dashboard.rule=Host(`bot.winu.app`)"
+      - "traefik.http.routers.bot-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.bot-dashboard.tls=true"
+      - "traefik.http.routers.bot-dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.services.bot-dashboard.loadbalancer.server.port=8000"
 
 volumes:
   postgres_data:
   redis_data:
   prometheus_data:
   grafana_data:
+  letsencrypt_data:
+  bot_logs:
 
 networks:
-  default:
-    name: winu-bot-signal-network
+  winu-bot-signal-network:
+    external: false
 
 
